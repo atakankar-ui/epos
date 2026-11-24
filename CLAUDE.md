@@ -65,7 +65,8 @@ Build one phase at a time and end each with: what was built, what to test, decis
 
 - **Installer**: electron-builder, NSIS, x64, unsigned (`build` in `package.json`, `npm run dist:win`). It cannot
   be built in a Linux cloud session (needs wine); `.github/workflows/build-windows.yml` builds it on
-  `windows-latest` for any `v*` tag and attaches `Till-Setup-<version>.exe` to a GitHub Release. Everything the
+  `windows-latest` when started by hand (workflow_dispatch; cloud sessions cannot push tags) and attaches
+  `Till-Setup-<version>.exe` to a GitHub Release named `v<package.json version>`. Bump the version first. Everything the
   app needs is bundled into `out/`, so there are no runtime `dependencies`. Installed, the data folder is
   `%APPDATA%/Till` (from `productName`: do not rename it, or tills lose their binding and unsent sales).
   No auto-update yet. The trial checklist is `docs/trial-checklist.md`.

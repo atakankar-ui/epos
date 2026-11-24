@@ -25,8 +25,9 @@ Windows warns that it is from an unknown publisher (the installer is not signed)
 **Run anyway**. The till's own data (which shop it belongs to, its sales) lives in the Windows user's AppData
 folder and is kept when a newer version is installed over the top.
 
-To publish a new version: change `version` in `package.json`, then push a tag with the same number
-(`v0.8.1`). GitHub Actions builds the installer on Windows and attaches it to a release.
+To publish a new version: change `version` in `package.json`, push, then on GitHub open **Actions**,
+**Build Windows installer**, **Run workflow**. It builds the installer on Windows and attaches it to a release
+named after the version.
 
 ## What is built so far
 
