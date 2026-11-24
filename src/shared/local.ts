@@ -30,7 +30,7 @@ export type LocalApi = {
   unbind(): Promise<void>
   getProducts(): Promise<Product[]>
   replaceProducts(products: Product[]): Promise<void>
-  saveSale(draft: SaleDraft): Promise<{ receiptNo: string }>
+  saveSale(draft: SaleDraft): Promise<{ receiptNo: string; saleId: string }>
   pendingSales(limit: number): Promise<PendingSale[]>
   markSynced(id: string): Promise<void>
   markRefused(id: string, reason: string): Promise<void>

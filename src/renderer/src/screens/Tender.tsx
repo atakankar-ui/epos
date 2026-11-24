@@ -6,7 +6,7 @@ import { takeCardPayment, type CardStage } from '../lib/card'
 
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', '00', 'C']
 
-type Done = { receiptNo: string; method: 'cash' | 'card'; changePence: number; card?: string }
+type Done = { receiptNo: string; saleId: string; method: 'cash' | 'card'; changePence: number; card?: string }
 
 const STAGE_TEXT: Record<CardStage, string> = {
   sending: 'Sending the amount to the card reader…',
@@ -20,7 +20,7 @@ export function Tender(props: {
   online: boolean
   tillId: string
   // Saves the sale on this PC. Returns its receipt number.
-  complete: (tender: TenderType, saleId?: string) => Promise<{ receiptNo: string }>
+  complete: (tender: TenderType, saleId?: string) => Promise<{ receiptNo: string; saleId: string }>
   onBack: () => void // nothing was paid: back to the basket
   onFinished: (done: Done) => void // paid and saved: next customer
 }) {
@@ -31,6 +31,21 @@ export function Tender(props: {
   const [cardStage, setCardStage] = useState<CardStage | null>(null)
   const [done, setDone] = useState<Done | null>(null)
   const cancelCard = useRef(false)
+  const [printNote, setPrintNote] = useState<{ ok: boolean; text: string } | null>(null)
+
+  // The sale is already saved. Now open the drawer (cash) and print, without ever blocking the till.
+  async function finish(next: Done) {
+    setDone(next)
+    const result = await window.till.hardware.afterSale(next.saleId)
+    if (!result.ok) setPrintNote({ ok: false, text: `The sale is saved, but the printer did not respond: ${result.message}` })
+    else if (result.printed) setPrintNote({ ok: true, text: 'Receipt printed.' })
+  }
+
+  async function printAgain(saleId: string, copy: boolean) {
+    setPrintNote(null)
+    const result = await window.till.hardware.printReceipt(saleId, copy)
+    setPrintNote(result.ok ? { ok: true, text: 'Receipt printed.' } : { ok: false, text: result.message })
+  }
 
   const given = keyedPence(entry) ?? 0
   const enough = given >= totalPence
@@ -41,8 +56,8 @@ export function Tender(props: {
     setBusy(true)
     setError(null)
     try {
-      const { receiptNo } = await props.complete({ method: 'cash', tenderedPence })
-      setDone({ receiptNo, method: 'cash', changePence: tenderedPence - totalPence })
+      const { receiptNo, saleId } = await props.complete({ method: 'cash', tenderedPence })
+      void finish({ receiptNo, saleId, method: 'cash', changePence: tenderedPence - totalPence })
     } catch (err) {
       setError(`The sale was NOT saved: ${failure(err)}`)
     } finally {
@@ -65,7 +80,7 @@ export function Tender(props: {
       try {
         const { receiptNo } = await props.complete(
           { method: 'card', paymentIntentId: outcome.paymentIntentId, brand: outcome.brand, last4: outcome.last4 }, saleId)
-        setDone({ receiptNo, method: 'card', changePence: 0, card: [outcome.brand, outcome.last4 && `ending ${outcome.last4}`].filter(Boolean).join(' ') })
+        void finish({ receiptNo, saleId, method: 'card', changePence: 0, card: [outcome.brand, outcome.last4 && `ending ${outcome.last4}`].filter(Boolean).join(' ') })
       } catch (err) {
         setError(`The card WAS charged ${formatPence(totalPence)}, but the sale was NOT saved: ${failure(err)} Do not charge the customer again. Tell the manager.`)
       }
@@ -107,6 +122,8 @@ export function Tender(props: {
             </>
           )}
           <p className="muted">Sale saved · receipt {done.receiptNo}</p>
+          {printNote && <p className={printNote.ok ? 'good' : 'error'} role="status" data-testid="print-note">{printNote.text}</p>}
+          <button className="reprint" onClick={() => void printAgain(done.saleId, printNote?.ok === true)}>{printNote?.ok ? 'Print a copy' : 'Print receipt'}</button>
           <button className="primary next" onClick={() => props.onFinished(done)}>Next customer</button>
         </div>
       </div>

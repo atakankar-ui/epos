@@ -33,12 +33,12 @@ export class LocalDb {
     `)
   }
 
-  private getMeta(key: string): string | null {
+  getMeta(key: string): string | null {
     const row = this.db.prepare('select value from meta where key = ?').get(key) as { value: string } | undefined
     return row?.value ?? null
   }
 
-  private setMeta(key: string, value: string): void {
+  setMeta(key: string, value: string): void {
     this.db.prepare('insert into meta (key, value) values (?, ?) on conflict (key) do update set value = excluded.value').run(key, value)
   }
 
@@ -89,7 +89,7 @@ export class LocalDb {
     this.transaction(() => {
       const waiting = this.db.prepare('select count(*) as n from sales where synced_at is null').get() as { n: number }
       if (waiting.n > 0) throw new Error(`${waiting.n} sales are still waiting to be sent. Connect to the internet and send them first.`)
-      this.db.exec("delete from meta where key in ('binding', 'products_synced_at'); delete from products;")
+      this.db.exec("delete from meta where key in ('binding', 'products_synced_at', 'shop_details'); delete from products;")
     })
   }
 
@@ -133,6 +133,12 @@ export class LocalDb {
       'select id, payload from sales where synced_at is null order by receipt_seq limit ?',
     ).all(Math.max(1, Math.min(200, Math.floor(limit)))) as Array<{ id: string; payload: string }>
     return rows.map((r) => ({ id: r.id, record: JSON.parse(r.payload) as SaleRecord }))
+  }
+
+  // Any sale ever made on this PC, sent or not (for printing its receipt).
+  getSale(id: string): SaleRecord | null {
+    const row = this.db.prepare('select payload from sales where id = ?').get(id) as { payload: string } | undefined
+    return row ? (JSON.parse(row.payload) as SaleRecord) : null
   }
 
   markSynced(id: string): void {

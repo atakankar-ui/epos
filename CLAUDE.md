@@ -36,6 +36,14 @@ Build one phase at a time and end each with: what was built, what to test, decis
   answers "not set up". The sale id is made before the card is taken and sent with `start`, so the function must
   use it as the idempotency key and store it on the PaymentIntent.
 
+- **Hardware**: `shared/receipt.ts` builds a receipt as plain lines; `shared/escpos.ts` turns lines into text
+  (preview, tests) or ESC/POS bytes (PC437, so `£` is 0x9C). `main/printer.ts` sends bytes: network printers by
+  TCP 9100; Windows-installed (USB) printers RAW through winspool via a PowerShell script (no native module);
+  `TILL_PRINT_TO_FILE=<folder>` writes jobs to files for tests. `main/hardware.ts` holds the IPC
+  (`window.till.hardware`): settings per PC in local meta `hardware`, shop receipt details cached in
+  `shop_details` (source of truth: `shop_settings` table, Buyer-only to change). The drawer kick goes at the
+  start of the cash sale's print job. **The Windows USB path has never run on a real Windows PC or printer.**
+
 ## Rules that must hold
 
 - Offline first: a sale is saved on the till before anything else and is never lost or rejected by sync. The till
@@ -48,6 +56,8 @@ Build one phase at a time and end each with: what was built, what to test, decis
 - Voided lines stay in the basket, struck through, so Phase 6 can write them to the audit log.
 - While the payment page is open the basket is frozen: typed or scanned digits are cash given, never new items.
 - A card sale is saved only after the reader says approved. Declined, cancelled or unknown saves nothing.
+- Printing and the drawer happen after the sale is saved and can never block or undo it; a failure is shown to
+  the cashier with a Print receipt button. Opening the drawer with no sale outside Setup is a Phase 6 manager action.
 - Money is VAT-inclusive pounds in the database (`numeric(10,2)`); do the sums in whole pence in the app.
 - Card payments (Stripe Terminal, server-driven) need internet and a server-side secret: that secret goes in a
   Supabase edge function, never in this app.

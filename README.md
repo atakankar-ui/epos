@@ -32,7 +32,11 @@ is being built. `npm run build` checks the code and builds it; `npm start` runs 
   customer gave or tap Exact / £5 / £10 / £20 / £50, and the till shows the change. Card: the till's side is
   built (send the amount, wait, approved / declined / cancelled, off when offline), but the server part that
   talks to Stripe is not written yet, so the Card button says "not set up".
-- Phases 5 to 8: hardware, refunds/staff/audit, reports, trial.
+- **Phase 5, hardware (built, not yet tried on a real printer):** receipts in ESC/POS, the cash drawer opened
+  through the printer on cash sales, and a printer section in Setup (USB printer installed in Windows, or a
+  network printer; paper width; test receipt; open drawer; what the receipt says). A printer fault never blocks
+  a sale.
+- Phases 6 to 8: refunds/staff/audit, reports, trial.
 
 `npm test` runs the checks on the money, VAT and basket sums.
 

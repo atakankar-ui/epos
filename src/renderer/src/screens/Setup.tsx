@@ -7,6 +7,7 @@ import type { SyncStatus } from '../lib/sync'
 import type { Binding } from '../../../shared/local'
 import { SignInForm } from './SignIn'
 import { signOutQuietly } from './Till'
+import { PrinterCard, ReceiptDetailsCard } from './Hardware'
 
 const MARK: Record<Check['state'], string> = { ok: '✓', todo: '!', problem: '✕' }
 const WORD: Record<Check['state'], string> = { ok: 'Ready', todo: 'To do', problem: 'Problem' }
@@ -126,6 +127,9 @@ export function Setup(props: {
           <SignInForm onSignedIn={() => void refresh()} fixedEmail={binding.email} />
         </section>
       )}
+
+      <PrinterCard />
+      <ReceiptDetailsCard binding={binding} />
 
       {checks && (
         <section className="card wide">

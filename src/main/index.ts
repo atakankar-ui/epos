@@ -3,6 +3,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { LocalDb } from './db'
+import { registerHardware } from './hardware'
 import type { Binding } from '../shared/local'
 import type { Product } from '../shared/products'
 import type { SaleDraft } from '../shared/sale'
@@ -59,10 +60,14 @@ function registerLocalStorage(): void {
   ipcMain.handle('local:unbind', () => db.unbind())
   ipcMain.handle('local:getProducts', () => db.getProducts())
   ipcMain.handle('local:replaceProducts', (_e, products: Product[]) => db.replaceProducts(products))
-  ipcMain.handle('local:saveSale', (_e, draft: SaleDraft) => ({ receiptNo: db.saveSale(draft).sale.receipt_no }))
+  ipcMain.handle('local:saveSale', (_e, draft: SaleDraft) => {
+    const record = db.saveSale(draft)
+    return { receiptNo: record.sale.receipt_no, saleId: record.sale.id }
+  })
   ipcMain.handle('local:pendingSales', (_e, limit: number) => db.pendingSales(limit))
   ipcMain.handle('local:markSynced', (_e, id: string) => db.markSynced(id))
   ipcMain.handle('local:markRefused', (_e, id: string, reason: string) => db.markRefused(id, reason))
+  registerHardware(db, () => BrowserWindow.getAllWindows()[0])
 }
 
 void app.whenReady().then(() => {

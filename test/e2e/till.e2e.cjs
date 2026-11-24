@@ -9,6 +9,9 @@ const assert = require('node:assert/strict')
 const dir = path.resolve(__dirname, '../..')
 const shots = process.argv[2]
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'till-e2e-')) // fresh, empty till PC each run
+const printJobs = fs.mkdtempSync(path.join(os.tmpdir(), 'till-jobs-')) // the stand-in printer: each job lands here as a file
+const jobs = () => fs.readdirSync(printJobs).sort().map((f) => fs.readFileSync(path.join(printJobs, f)))
+const KICK = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa])
 
 // ---------- the stand-in database ----------
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -36,6 +39,7 @@ const server = {
   rows: { sales: new Map(), sale_items: new Map(), payments: new Map() },
   posts: 0,
   card: { mode: 'missing', state: 'waiting', checks: 0, started: [] }, // the stand-in card reader
+  shopSettings: [],
 }
 
 function handle(route) {
@@ -68,6 +72,10 @@ function handle(route) {
     if (++card.checks >= 2 && card.state === 'waiting' && card.mode !== 'hang') card.state = card.mode // the customer takes a moment
     return json(route, card.state === 'approved' ? { state: 'approved', brand: 'visa', last4: '4242' } : card.state === 'declined' ? { state: 'declined', message: 'Insufficient funds.' } : { state: card.state })
   }
+  if (p === '/rest/v1/shop_settings') {
+    if (req.method() === 'POST') { server.shopSettings = [req.postDataJSON()]; return json(route, [{ org_id: org }], 201) }
+    return json(route, server.shopSettings)
+  }
   const table = p.replace('/rest/v1/', '')
   if (server.rows[table] && req.method() === 'POST') {
     server.posts++
@@ -83,7 +91,7 @@ function handle(route) {
 let app, win
 const errors = []
 async function launch() {
-  app = await electron.launch({ executablePath: path.join(dir, 'node_modules/electron/dist/electron'), args: ['--no-sandbox', `--user-data-dir=${profile}`, dir], cwd: dir })
+  app = await electron.launch({ executablePath: path.join(dir, 'node_modules/electron/dist/electron'), args: ['--no-sandbox', `--user-data-dir=${profile}`, dir], cwd: dir, env: { ...process.env, TILL_PRINT_TO_FILE: printJobs } })
   win = await app.firstWindow()
   win.on('pageerror', (e) => errors.push(e.message))
   await win.route('https://gobbuzoypsfbrkayfuod.supabase.co/**', handle)
@@ -223,6 +231,41 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   const cardPay = [...server.rows.payments.values()].find((p) => p.method === 'card')
   assert.deepEqual([cardPay.amount, cardPay.tendered, cardPay.change_given, cardPay.stripe_payment_intent_id, cardPay.card_brand, cardPay.card_last4], [21, null, null, 'pi_test_3', 'visa', '4242'])
   assert.equal(cardPay.sale_id, server.card.started[2].sale_id); assert.equal(server.rows.sales.get(cardPay.sale_id).total, 21); step('card approved: sale saved and sent with the card details, matched to the payment the reader took')
+  assert.equal(jobs().length, 0); step('with no printer chosen, sales go through and nothing is sent to a printer')
+
+  // ----- receipt printer and cash drawer -----
+  await win.click('text=Setup')
+  await win.selectOption('[data-testid=printer-kind]', 'network'); await win.fill('[data-testid=printer-host]', '192.168.1.50')
+  await win.click('text=Print test receipt'); await win.waitForSelector('text=/Check the test receipt came out/')
+  assert.equal(jobs().length, 1); assert.ok(jobs()[0].includes('Printer test')); assert.ok(!jobs()[0].includes(KICK)); step('Setup: choose a network printer, print a test receipt')
+  await win.click('button:has-text("Open drawer")'); await win.waitForSelector('text=/The drawer should have opened/')
+  assert.deepEqual([...jobs()[1]], [0x1b, 0x40, ...KICK]); step('Setup: Open drawer sends the drawer-open signal')
+  await win.fill('[data-testid=shop-name]', 'Corner Shop Ltd'); await win.fill('[data-testid=shop-address]', '1 High Street\nLeeds LS1 1AA')
+  await win.fill('[data-testid=shop-vat]', 'GB123456789'); await win.fill('[data-testid=shop-footer]', 'Thank you!')
+  await win.click('text=Save receipt details'); await win.waitForSelector('text=/Every till in this shop will print these/')
+  assert.deepEqual({ ...server.shopSettings[0], updated_at: 0 }, { org_id: org, trading_name: 'Corner Shop Ltd', address: '1 High Street\nLeeds LS1 1AA', vat_number: 'GB123456789', receipt_footer: 'Thank you!', updated_at: 0 }); step('receipt details saved for the whole shop')
+  await shot('hardware')
+  await win.click('text=Back to till')
+
+  await scan('5000112637922'); await scan('5000112637922'); await win.click('.pay'); await win.click('.quick >> text="£5"')
+  await win.waitForSelector('text=Receipt printed.')
+  const receipt = jobs()[2], words = receipt.toString('latin1')
+  assert.deepEqual([...receipt.subarray(2, 7)], [...KICK])
+  for (const part of ['Corner Shop Ltd', '1 High Street', 'Leeds LS1 1AA', 'VAT No. GB123456789', 'Receipt T2-000007', 'COLA 500ML', '2 x \x9c1.49', 'TOTAL', '\x9c2.98', 'Cash', '\x9c5.00', 'Change', '\x9c2.02', '20% on \x9c2.48 net', '\x9c0.50', 'Thank you!']) assert.ok(words.includes(part), 'receipt is missing: ' + part)
+  step('cash sale: drawer opens first, then the receipt prints with shop details, items, total, cash, change and VAT')
+  await win.click('text=Print a copy'); await win.waitForFunction((n) => true, 0); await win.waitForTimeout(300)
+  assert.equal(jobs().length, 4); assert.ok(jobs()[3].includes('** COPY **')); assert.ok(!jobs()[3].includes(KICK)); step('Print a copy: marked COPY, drawer stays shut')
+  await win.click('text=Next customer'); await saved()
+
+  await scan('333'); await win.click('.pay'); await win.click('.card-btn'); await win.waitForSelector('text=Receipt printed.')
+  assert.equal(jobs().length, 5); assert.ok(jobs()[4].includes('Card visa ****4242')); assert.ok(!jobs()[4].includes(KICK)); step('card sale: receipt prints, drawer stays shut')
+  await win.click('text=Next customer'); await saved()
+
+  fs.rmSync(printJobs, { recursive: true, force: true }) // the printer "breaks"
+  await scan('5000112637922'); await win.click('.pay'); await win.click('.quick >> text=Exact')
+  await win.waitForSelector('text=/The sale is saved, but the printer did not respond/'); await shot('printer-failed')
+  await win.click('text=Next customer'); await saved(); assert.match(await message(), /Receipt T2-000009/); await waitingIs(0)
+  assert.equal(server.rows.sales.size, 9); step('printer broken: the sale is still saved and sent, and the cashier is told the receipt did not print')
   await win.click('text=Setup')
 
   // ----- disconnect -----

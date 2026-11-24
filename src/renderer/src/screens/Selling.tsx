@@ -16,7 +16,7 @@ const MAX_ENTRY = 14 // the longest barcode a scanner sends
 export function Selling({ index, onPay, online, tillId }: {
   index: ProductIndex
   // Saves the sale on this PC and returns its receipt number.
-  onPay: (basket: Basket, tender: TenderType, saleId?: string) => Promise<{ receiptNo: string }>
+  onPay: (basket: Basket, tender: TenderType, saleId?: string) => Promise<{ receiptNo: string; saleId: string }>
   online: boolean
   tillId: string
 }) {

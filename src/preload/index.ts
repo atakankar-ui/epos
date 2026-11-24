@@ -1,6 +1,7 @@
 // The bridge: the only things the screen is allowed to ask the Windows program for.
 import { contextBridge, ipcRenderer } from 'electron'
 import type { LocalApi } from '../shared/local'
+import type { HardwareApi } from '../shared/hardware'
 
 const local: LocalApi = {
   getState: () => ipcRenderer.invoke('local:getState'),
@@ -14,9 +15,23 @@ const local: LocalApi = {
   markRefused: (id, reason) => ipcRenderer.invoke('local:markRefused', id, reason),
 }
 
+const hardware: HardwareApi = {
+  getConfig: () => ipcRenderer.invoke('hardware:getConfig'),
+  setConfig: (config) => ipcRenderer.invoke('hardware:setConfig', config),
+  listPrinters: () => ipcRenderer.invoke('hardware:listPrinters'),
+  afterSale: (saleId) => ipcRenderer.invoke('hardware:afterSale', saleId),
+  printReceipt: (saleId, copy) => ipcRenderer.invoke('hardware:printReceipt', saleId, copy),
+  receiptText: (saleId) => ipcRenderer.invoke('hardware:receiptText', saleId),
+  testPrint: () => ipcRenderer.invoke('hardware:testPrint'),
+  testDrawer: () => ipcRenderer.invoke('hardware:testDrawer'),
+  setShopDetails: (details) => ipcRenderer.invoke('hardware:setShopDetails', details),
+  getShopDetails: () => ipcRenderer.invoke('hardware:getShopDetails'),
+}
+
 const till = {
   appInfo: (): Promise<{ version: string; platform: string }> => ipcRenderer.invoke('app:info'),
   local,
+  hardware,
 }
 
 contextBridge.exposeInMainWorld('till', till)

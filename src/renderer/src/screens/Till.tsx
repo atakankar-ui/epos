@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { refreshProducts } from '../lib/connect'
+import { pullShopDetails } from '../lib/shopDetails'
 import { syncOnce, type SyncStatus } from '../lib/sync'
 import { buildIndex, type ProductIndex } from '../../../shared/products'
 import { buildSale, type Tender } from '../../../shared/sale'
@@ -41,6 +42,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
         const ok = await refreshProducts(binding)
         setWrongShop(!ok)
         if (ok) await loadLocal()
+        if (ok) await pullShopDetails(binding)
       }
     } catch {
       // A failed round changes nothing on this PC; the next round tries again.
