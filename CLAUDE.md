@@ -63,6 +63,13 @@ Build one phase at a time and end each with: what was built, what to test, decis
   Sync order: `day_open` rows, then sales, then everything else in order. Reports need a manager once staff exist.
   The saved report JSON (`version: 1`) is what a future Retail Aid screen should read; none exists yet.
 
+- **Installer**: electron-builder, NSIS, x64, unsigned (`build` in `package.json`, `npm run dist:win`). It cannot
+  be built in a Linux cloud session (needs wine); `.github/workflows/build-windows.yml` builds it on
+  `windows-latest` for any `v*` tag and attaches `Till-Setup-<version>.exe` to a GitHub Release. Everything the
+  app needs is bundled into `out/`, so there are no runtime `dependencies`. Installed, the data folder is
+  `%APPDATA%/Till` (from `productName`: do not rename it, or tills lose their binding and unsent sales).
+  No auto-update yet. The trial checklist is `docs/trial-checklist.md`.
+
 ## Rules that must hold
 
 - Offline first: a sale is saved on the till before anything else and is never lost or rejected by sync. The till

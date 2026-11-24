@@ -18,6 +18,16 @@ npm run dev
 A window opens. Sign in with a shop's Retail Aid email and password; use a **test shop** while the till
 is being built. `npm run build` checks the code and builds it; `npm start` runs that built copy.
 
+## Install on a till PC
+
+Download `Till-Setup-….exe` from the newest entry under **Releases** on GitHub and run it on the till PC.
+Windows warns that it is from an unknown publisher (the installer is not signed): choose **More info**, then
+**Run anyway**. The till's own data (which shop it belongs to, its sales) lives in the Windows user's AppData
+folder and is kept when a newer version is installed over the top.
+
+To publish a new version: change `version` in `package.json`, then push a tag with the same number
+(`v0.8.1`). GitHub Actions builds the installer on Windows and attaches it to a release.
+
 ## What is built so far
 
 - **Phase 1, setup (done):** the app, the sign-in, and a connection-check page that shows the shop, its
@@ -42,7 +52,8 @@ is being built. `npm run build` checks the code and builds it; `npm start` runs 
 - **Phase 7, reports (done):** each till has a trading day, started by typing the cash float. An X report shows
   the day so far; a Z report asks for the counted cash, fixes the figures, closes the day and starts the next Z
   number. Both print, and the Z report is saved in the database (`day_sessions.report`).
-- Phase 8: trial.
+- **Phase 8, trial (installer set up):** GitHub builds a Windows installer whenever a version tag is pushed.
+  The checklist for trying it in the shop is `docs/trial-checklist.md`.
 
 `npm test` runs the checks on the money, VAT and basket sums.
 

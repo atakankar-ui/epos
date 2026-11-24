@@ -30,7 +30,13 @@ function createWindow(): void {
     },
   })
 
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    if (app.isPackaged) win.maximize() // an installed till fills the screen; F11 makes it truly full-screen
+    win.show()
+  })
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F11') win.setFullScreen(!win.isFullScreen())
+  })
 
   // Links never open inside the till window.
   win.webContents.setWindowOpenHandler(({ url }) => {

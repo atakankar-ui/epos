@@ -1,6 +1,6 @@
 {
   "name": "epos-till",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "description": "Till (EPOS) for independent UK shops. Shares its database with Retail Aid.",
   "private": true,
   "main": "./out/main/index.js",
@@ -10,22 +10,56 @@
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "test": "vitest run",
-    "e2e": "npm run build && xvfb-run -a node test/e2e/till.e2e.cjs"
+    "e2e": "npm run build && xvfb-run -a node test/e2e/till.e2e.cjs",
+    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.119.2",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vitest": "^5.1.1"
   },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.119.2",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+  "productName": "Till",
+  "author": "Atakan Supermarket",
+  "build": {
+    "appId": "app.retailaid.till",
+    "productName": "Till",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Till",
+      "artifactName": "Till-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
