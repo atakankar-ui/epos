@@ -39,10 +39,10 @@ named after the version.
 - **Phase 3, offline and sync (done):** the till keeps its own copy of the products and every sale in a
   database file on the PC. It opens and sells with no internet, shows Online or "Offline · cash only" in the top
   bar, and sends waiting sales in the background.
-- **Phase 4, payments (cash done, card half done):** the Pay button opens a payment page. Cash: type what the
-  customer gave or tap Exact / £5 / £10 / £20 / £50, and the till shows the change. Card: the till's side is
-  built (send the amount, wait, approved / declined / cancelled, off when offline), but the server part that
-  talks to Stripe is not written yet, so the Card button says "not set up".
+- **Phase 4, payments (done):** the Pay button opens a payment page. Cash: type what the customer gave or tap
+  Exact / £5 / £10 / £20 / £50, and the till shows the change. Card: the shop keeps its own card machine from
+  any provider; the till shows the amount, the cashier keys it into the card machine and confirms on the till
+  that it was approved. The Z report compares the till's card total with the card machine's.
 - **Phase 5, hardware (built, not yet tried on a real printer):** receipts in ESC/POS, the cash drawer opened
   through the printer on cash sales, and a printer section in Setup (USB printer installed in Windows, or a
   network printer; paper width; test receipt; open drawer; what the receipt says). A printer fault never blocks

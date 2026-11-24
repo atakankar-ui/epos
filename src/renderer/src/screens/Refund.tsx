@@ -20,10 +20,15 @@ export function Refund({ binding, online, tools, onClose }: { binding: Binding; 
   const [toShelf, setToShelf] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<{ refundId: string; receiptNo: string; totalPence: number } | null>(null)
+  const [done, setDone] = useState<{ refundId: string; receiptNo: string; totalPence: number; method: 'cash' | 'card' } | null>(null)
+  const [cardStep, setCardStep] = useState<{ reason: string; approvedBy: string | null } | null>(null) // waiting for "it went through" on the card machine
+  const [cardOn, setCardOn] = useState(true)
   const [printNote, setPrintNote] = useState<{ ok: boolean; text: string } | null>(null)
 
-  useEffect(() => { void window.till.local.recentSales(8).then(setRecent) }, [])
+  useEffect(() => {
+    void window.till.local.recentSales(8).then(setRecent)
+    void window.till.hardware.getConfig().then((c) => setCardOn(c.card !== 'off'))
+  }, [])
 
   async function open(receiptNo: string) {
     setBusy(true)
@@ -44,23 +49,32 @@ export function Refund({ binding, online, tools, onClose }: { binding: Binding; 
   const totalPence = lines.reduce((sum, l) => sum + l.unitPence * (picks[l.itemId] ?? 0), 0)
   const pick = (id: string, qty: number, max: number) => setPicks((p) => ({ ...p, [id]: Math.max(0, Math.min(max, qty)) }))
 
-  async function refund() {
+  // A manager allows it first. Cash is then paid out straight away; a card refund waits for the cashier to
+  // do it on the card machine and confirm it went through.
+  async function start(method: 'cash' | 'card') {
     if (!record || totalPence === 0 || busy) return
-    const answer = await tools.ask({ title: `Refund ${formatPence(totalPence)} in cash?`, manager: true, reasons: REFUND_REASONS })
+    const answer = await tools.ask({ title: `Refund ${formatPence(totalPence)} ${method === 'cash' ? 'in cash' : 'to the card'}?`, manager: true, reasons: REFUND_REASONS })
     if (!answer) return
+    if (method === 'card') setCardStep(answer)
+    else await save('cash', answer)
+  }
+
+  async function save(method: 'cash' | 'card', answer: { reason: string; approvedBy: string | null }) {
+    if (!record || busy) return
+    setCardStep(null)
     setBusy(true)
     setError(null)
     try {
       const draft = buildRefund({
-        record, picks, already, reason: answer.reason, staffId: tools.staffId, approvedBy: answer.approvedBy, returnToStock: toShelf,
+        record, picks, already, reason: answer.reason, staffId: tools.staffId, approvedBy: answer.approvedBy, returnToStock: toShelf, method,
         orgId: binding.orgId, tillId: binding.tillId, at: new Date(), newId: () => crypto.randomUUID(),
       })
       const saved = await window.till.local.saveRefund(draft)
       await tools.log({
         action: 'refund', reason: answer.reason, approvedBy: answer.approvedBy, saleId: record.sale.id, refundId: saved.refundId, amountPence: totalPence,
-        details: { receipt_no: saved.receiptNo, original_receipt_no: record.sale.receipt_no, items: draft.items.map((i) => ({ name: i.name, quantity: i.quantity })) },
+        details: { receipt_no: saved.receiptNo, original_receipt_no: record.sale.receipt_no, method, items: draft.items.map((i) => ({ name: i.name, quantity: i.quantity })) },
       })
-      setDone({ ...saved, totalPence })
+      setDone({ ...saved, totalPence, method })
       const result = await window.till.hardware.afterRefund(saved.refundId)
       if (!result.ok) setPrintNote({ ok: false, text: `The refund is saved, but the printer did not respond: ${result.message}` })
       else if (result.printed) setPrintNote({ ok: true, text: 'Refund slip printed.' })
@@ -72,12 +86,26 @@ export function Refund({ binding, online, tools, onClose }: { binding: Binding; 
     return (
       <div className="overlay" role="dialog" aria-label="Refund complete">
         <div className="tender done">
-          <p className="muted big">Give back in cash</p>
+          <p className="muted big">{done.method === 'cash' ? 'Give back in cash' : 'Refunded to the card'}</p>
           <p className="change" data-testid="refund-total">{formatPence(done.totalPence)}</p>
           <p className="muted">Refund saved · {done.receiptNo}</p>
           {printNote && <p className={printNote.ok ? 'good' : 'error'} role="status">{printNote.text}</p>}
           <button className="reprint" onClick={() => void window.till.hardware.printRefund(done.refundId).then((r) => setPrintNote(r.ok ? { ok: true, text: 'Refund slip printed.' } : { ok: false, text: r.message }))}>Print refund slip</button>
           <button className="primary next" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    )
+  }
+
+  if (cardStep) {
+    return (
+      <div className="overlay" role="dialog" aria-label="Card refund">
+        <div className="tender done">
+          <p className="muted big">Refund this on the card machine</p>
+          <p className="change" data-testid="card-amount">{formatPence(totalPence)}</p>
+          <p className="big">Did the card machine say the refund went through?</p>
+          <button className="primary next" onClick={() => void save('card', cardStep)}>Yes, refunded</button>
+          <button className="danger next" onClick={() => { setCardStep(null); setError('Card refund not done, so nothing was saved.') }}>No, it did not go through</button>
         </div>
       </div>
     )
@@ -112,7 +140,7 @@ export function Refund({ binding, online, tools, onClose }: { binding: Binding; 
           </>
         ) : (
           <>
-            <p className="muted">Sold {time(record.sale.sold_at)} · paid by {record.payments[0]?.method ?? 'cash'}{record.payments[0]?.method === 'card' && ' · card refunds are not set up yet, so this refund is given in cash'}</p>
+            <p className="muted">Sold {time(record.sale.sold_at)} · paid by {record.payments[0]?.method ?? 'cash'}</p>
             <ul className="results">
               {lines.map((l) => (
                 <li key={l.itemId} className="refund-line">
@@ -129,9 +157,12 @@ export function Refund({ binding, online, tools, onClose }: { binding: Binding; 
               ))}
             </ul>
             <label className="tick"><input type="checkbox" checked={toShelf} onChange={(e) => setToShelf(e.target.checked)} />The goods are going back on the shelf (untick if damaged or out of date)</label>
-            <button className="primary take" onClick={() => void refund()} disabled={busy || totalPence === 0}>
+            <button className="primary take" onClick={() => void start('cash')} disabled={busy || totalPence === 0}>
               {totalPence === 0 ? 'Choose what to refund' : `Refund ${formatPence(totalPence)} in cash`}
             </button>
+            {record.payments.some((pay) => pay.method === 'card') && cardOn && totalPence > 0 && (
+              <button className="take" onClick={() => void start('card')} disabled={busy}>Refund {formatPence(totalPence)} to the card (on the card machine)</button>
+            )}
           </>
         )}
       </div>

@@ -69,6 +69,9 @@ export function Reports({ binding, day, tools, onClosed, onClose }: {
   const [view, setView] = useState<View | null>(null)
   const [counting, setCounting] = useState(false)
   const [counted, setCounted] = useState('')
+  const [countStep, setCountStep] = useState<'cash' | 'card'>('cash')
+  const [cashCount, setCashCount] = useState<number | null>(null)
+  const [cardOn, setCardOn] = useState(true)
   const [past, setPast] = useState<DayInfo[]>([])
   const [columns, setColumns] = useState(48)
   const [shop, setShop] = useState({ name: binding.orgName, address: null as string | null, vatNumber: null as string | null, footer: null as string | null })
@@ -79,7 +82,7 @@ export function Reports({ binding, day, tools, onClosed, onClose }: {
   const loadPast = useCallback(() => window.till.local.listDays(30).then((days) => setPast(days.filter((d) => d.report))), [])
   useEffect(() => {
     void loadPast()
-    void window.till.hardware.getConfig().then((c) => setColumns(c.columns))
+    void window.till.hardware.getConfig().then((c) => { setColumns(c.columns); setCardOn(c.card !== 'off') })
     void window.till.hardware.getShopDetails().then(setShop)
   }, [loadPast])
 
@@ -105,18 +108,26 @@ export function Reports({ binding, day, tools, onClosed, onClose }: {
     setBusy(false)
   }
 
-  async function zReport() {
+  // Step 1: the cash count (or skip). Step 2, when the till takes cards: the card machine's own total (or skip).
+  function cashStepDone(countedPence: number | null) {
+    setCashCount(countedPence)
+    setCounted('')
+    if (cardOn) setCountStep('card')
+    else void zReport(countedPence, null)
+  }
+
+  async function zReport(countedPence: number | null, cardMachinePence: number | null) {
     if (!day || busy) return
     setBusy(true)
     setError(null)
     try {
       const at = new Date()
-      const countedPence = keyedPence(counted)
-      const report = buildReport({ kind: 'Z', tillName: binding.tillName, ...(await window.till.local.dayData(day.id)), at, countedPence })
+      const report = buildReport({ kind: 'Z', tillName: binding.tillName, ...(await window.till.local.dayData(day.id)), at, countedPence, cardMachinePence })
       await window.till.local.closeDay({ id: day.id, closedBy: tools.staffId, countedPence, at: at.toISOString(), report })
       await tools.log({ action: 'z_report', reason: null, amountPence: report.netPence, details: { z_number: report.zNumber, day_session_id: day.id } })
       setCounting(false)
       setCounted('')
+      setCountStep('cash')
       setView({ report, note: 'The day is closed. Start a new day when you are ready to sell again.' })
       onClosed()
       void loadPast()
@@ -148,13 +159,26 @@ export function Reports({ binding, day, tools, onClosed, onClose }: {
     return (
       <div className="overlay" role="dialog" aria-label="Count the cash">
         <div className="tender approval">
-          <h2>Z report: count the cash</h2>
-          <p className="muted">Count all the cash in the drawer, float included, and type the total in pence. The report will show whether it is over or short. Leave it at £0.00 and press Skip if you are not counting today.</p>
-          <MoneyPad value={counted} onChange={setCounted} onEnter={() => undefined} />
-          {error && <p className="error" role="alert">{error}</p>}
-          <button className="primary take" onClick={() => void zReport()} disabled={busy || !counted}>Close the day</button>
-          <button onClick={() => { setCounted(''); void zReport() }} disabled={busy}>Skip the count and close the day</button>
-          <button onClick={() => { setCounting(false); setCounted('') }} disabled={busy}>Cancel</button>
+          {countStep === 'cash' ? (
+            <>
+              <h2>Z report: count the cash</h2>
+              <p className="muted">Count all the cash in the drawer, float included, and type the total in pence. The report will show whether it is over or short.</p>
+              <MoneyPad value={counted} onChange={setCounted} onEnter={() => undefined} />
+              {error && <p className="error" role="alert">{error}</p>}
+              <button className="primary take" onClick={() => cashStepDone(keyedPence(counted))} disabled={busy || !counted}>{cardOn ? 'Next' : 'Close the day'}</button>
+              <button onClick={() => cashStepDone(null)} disabled={busy}>Skip the cash count</button>
+            </>
+          ) : (
+            <>
+              <h2>Z report: the card machine's total</h2>
+              <p className="muted">Run the end-of-day report on the card machine and type its total for today in pence (sales less refunds). The report will show whether the till and the card machine agree.</p>
+              <MoneyPad value={counted} onChange={setCounted} onEnter={() => undefined} />
+              {error && <p className="error" role="alert">{error}</p>}
+              <button className="primary take" onClick={() => void zReport(cashCount, keyedPence(counted))} disabled={busy || !counted}>Close the day</button>
+              <button onClick={() => void zReport(cashCount, null)} disabled={busy}>Skip the card check and close the day</button>
+            </>
+          )}
+          <button onClick={() => { setCounting(false); setCounted(''); setCountStep('cash') }} disabled={busy}>Cancel</button>
         </div>
       </div>
     )

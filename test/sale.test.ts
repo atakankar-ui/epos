@@ -61,10 +61,15 @@ describe('turning a basket into database rows', () => {
     expect(() => buildSale({ ...base, basket: basket(), tender: { method: 'cash', tenderedPence: 496 } })).toThrow()
   })
 
-  it('card payment: no cash figures, the card details kept, and the sale id decided beforehand', () => {
+  it('card payment on the shop\'s own card machine: recorded as card, nothing else known', () => {
+    const card = buildSale({ basket: basket(), orgId: 'org', tillId: 'till', soldAt: new Date(), tender: { method: 'card' }, newId: ids() })
+    expect(card.payments[0]).toMatchObject({ method: 'card', amount: 4.97, tendered: null, change_given: null, stripe_payment_intent_id: null, card_brand: null, card_last4: null })
+  })
+
+  it('card payment from a linked card machine: the reference and card details are kept', () => {
     const card = buildSale({
       basket: basket(), orgId: 'org', tillId: 'till', soldAt: new Date('2026-11-24T19:30:00Z'),
-      tender: { method: 'card', paymentIntentId: 'pi_123', brand: 'visa', last4: '4242' }, newId: ids(), saleId: 'sale-fixed',
+      tender: { method: 'card', reference: 'pi_123', brand: 'visa', last4: '4242' }, newId: ids(), saleId: 'sale-fixed',
     })
     expect(card.sale.id).toBe('sale-fixed')
     expect(card.items.every((i) => i.sale_id === 'sale-fixed')).toBe(true)

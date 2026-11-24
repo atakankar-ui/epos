@@ -12,9 +12,11 @@ export type HardwareConfig = {
   columns: 32 | 42 | 48 // characters per line: 48 or 42 for 80mm paper, 32 for 58mm
   autoPrint: boolean // print a receipt for every sale
   drawer: boolean // a cash drawer is plugged into the printer
+  // 'terminal' = the shop's own card machine, any provider: the cashier keys the amount there and confirms here.
+  card: 'terminal' | 'off'
 }
 
-export const defaultHardware: HardwareConfig = { printer: { kind: 'none' }, columns: 48, autoPrint: true, drawer: true }
+export const defaultHardware: HardwareConfig = { printer: { kind: 'none' }, columns: 48, autoPrint: true, drawer: true, card: 'terminal' }
 
 export type PrintResult = { ok: true; printed: boolean; drawer: boolean } | { ok: false; message: string }
 
@@ -51,5 +53,6 @@ export function validHardware(value: unknown): HardwareConfig {
     columns: v?.columns === 32 || v?.columns === 42 ? v.columns : 48,
     autoPrint: v?.autoPrint !== false,
     drawer: v?.drawer !== false,
+    card: v?.card === 'off' ? 'off' : 'terminal',
   }
 }

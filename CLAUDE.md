@@ -28,13 +28,15 @@ Build one phase at a time and end each with: what was built, what to test, decis
   reason, retry every round, show it in Setup. Products refresh every 10 minutes, but never when the sign-in's
   `current_org()` is not this till's shop.
 
-- **Payments** are `screens/Tender.tsx`. Cash is complete. Card: `lib/card.ts` calls an edge function named
-  `till-card` with `{action: 'start', sale_id, till_id, amount_pence}` -> `{payment_intent_id}`, then polls
-  `{action: 'status', payment_intent_id, till_id}` -> `{state: waiting|approved|declined|cancelled, brand, last4,
-  message}`, and `{action: 'cancel', ...}`. **That function does not exist yet** (needs Atakan's Stripe decisions:
-  whose Stripe account per shop, which reader; plus a `stripe_reader_id` per till). Until then the Card button
-  answers "not set up". The sale id is made before the card is taken and sent with `start`, so the function must
-  use it as the idempotency key and store it on the PaymentIntent.
+- **Payments** are `screens/Tender.tsx`: cash (with change) and card. **Card is "separate card machine" mode**
+  (Atakan's decision, 24 Nov 2026: no Stripe; every shop keeps its own card provider). The till shows the amount,
+  the cashier keys it into the shop's card machine and then confirms "Yes, approved" on the till, by button only
+  (never Enter or a scan). The till never talks to the card machine, so it works with any provider and when the
+  till is offline. `payments.stripe_payment_intent_id`, `card_brand`, `card_last4` stay null; they are for a
+  future linked provider (per-till setting `hardware.card`, today `terminal` or `off`). Card refunds work the
+  same way (manager approval, do it on the machine, confirm). The Z report can take the card machine's own
+  total and shows any difference (`report.cardCheck`). An earlier Stripe-style linked flow (send amount, poll,
+  cancel) was removed; it is in git history at commit a8d43c9 (`lib/card.ts`) if a provider link is ever built.
 
 - **Hardware**: `shared/receipt.ts` builds a receipt as plain lines; `shared/escpos.ts` turns lines into text
   (preview, tests) or ESC/POS bytes (PC437, so `£` is 0x9C). `main/printer.ts` sends bytes: network printers by
@@ -52,8 +54,9 @@ Build one phase at a time and end each with: what was built, what to test, decis
   Void line / void sale: any staff, reason required. Audit entries and refunds go into the local `outbox` table
   and are synced after sales, in order (a refund needs its sale on the server first).
 - **Refunds** (`shared/refund.ts`, `screens/Refund.tsx`): by receipt number (this till's records, else the
-  database when online), per line and quantity, never more than sold minus already refunded, cash only, own
-  number run `T1-R000001`. No refund without a receipt yet; card refunds wait for the Stripe function.
+  database when online), per line and quantity, never more than sold minus already refunded, own
+  number run `T1-R000001`, in cash or (for a card sale) back to the card on the card machine. No refund without
+  a receipt yet.
 
 - **Trading days and reports** (`shared/report.ts`, `screens/Reports.tsx`): local `days` table, at most one open;
   `StartDay` (float) shows whenever none is. The local database stamps `day_session_id` on each sale and refund.
@@ -82,15 +85,13 @@ Build one phase at a time and end each with: what was built, what to test, decis
   A product with no price asks the cashier to key one; it is not written back to the product.
 - Voided lines stay in the basket, struck through, so Phase 6 can write them to the audit log.
 - While the payment page is open the basket is frozen: typed or scanned digits are cash given, never new items.
-- A card sale is saved only after the reader says approved. Declined, cancelled or unknown saves nothing.
+- A card sale is saved only after the cashier confirms the card machine approved it. "No" saves nothing.
 - Printing and the drawer happen after the sale is saved and can never block or undo it; a failure is shown to
   the cashier with a Print receipt button. Opening the drawer with no sale outside Setup is a Phase 6 manager action.
 - The audit entry is written before the action takes effect; if it cannot be written, the action does not happen.
   Audit entries are insert-only locally too.
 - A closed day is never changed, locally or in the database. Selling needs an open day.
 - Money is VAT-inclusive pounds in the database (`numeric(10,2)`); do the sums in whole pence in the app.
-- Card payments (Stripe Terminal, server-driven) need internet and a server-side secret: that secret goes in a
-  Supabase edge function, never in this app.
 
 ## Working on it
 

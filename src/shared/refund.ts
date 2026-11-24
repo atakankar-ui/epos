@@ -54,6 +54,7 @@ export function buildRefund(input: {
   staffId: string | null
   approvedBy: string | null
   returnToStock: boolean
+  method?: 'cash' | 'card' // card = refunded on the shop's card machine, confirmed by the cashier
   orgId: string
   tillId: string
   at: Date
@@ -86,7 +87,7 @@ export function buildRefund(input: {
   return {
     refund: {
       id: refundId, org_id: input.orgId, till_id: input.tillId, day_session_id: null, staff_id: input.staffId, approved_by: input.approvedBy,
-      sale_id: record.sale.id, method: 'cash', total: totalPence / 100, vat_total: vatPence / 100,
+      sale_id: record.sale.id, method: input.method ?? 'cash', total: totalPence / 100, vat_total: vatPence / 100,
       reason: input.reason.trim(), refunded_at: input.at.toISOString(),
     },
     items,

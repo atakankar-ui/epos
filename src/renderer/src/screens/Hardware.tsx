@@ -109,6 +109,14 @@ export function PrinterCard() {
         </>
       )}
       {note && <p className={note.kind === 'ok' ? 'good' : 'error'} role="status" data-testid="printer-note">{note.text}</p>}
+      <label>
+        Card payments
+        <select data-testid="card-mode" value={config.card} onChange={(e) => change({ ...config, card: e.target.value === 'off' ? 'off' : 'terminal' })}>
+          <option value="terminal">The shop's own card machine (any provider)</option>
+          <option value="off">No card payments on this till</option>
+        </select>
+        <small className="muted">The cashier types the amount into the card machine and confirms on the till that it was approved. At the end of the day the Z report compares the till's card total with the card machine's.</small>
+      </label>
     </section>
   )
 }

@@ -60,6 +60,15 @@ Do the whole list there once, then connect the till to the real shop.
       and price, total, cash given, change, VAT by rate.
 - [ ] **Print a copy** prints a second one marked COPY without opening the drawer.
 
+## 6b. Card payment (with the shop's own card machine)
+
+- [ ] Press **Pay**, then **Card**: the till shows the amount in large type.
+- [ ] Type that amount into the card machine and pay with a real card (a small amount you can refund).
+- [ ] Press **Yes, approved**: the receipt prints and says Card. The cash drawer stays shut.
+- [ ] Try once more and press **No, declined or cancelled**: nothing is saved and the basket is still there.
+- [ ] Refund the card sale: **More → Refund**, find the receipt, **Refund … to the card**. Do the refund on the
+      card machine, then press **Yes, refunded**.
+
 ## 7. Manager actions (sign in as the Cashier for these)
 
 - [ ] Tap a line, type a lower price (99), press **Price**: it asks for a manager. Enter the manager PIN and a
@@ -74,7 +83,7 @@ Do the whole list there once, then connect the till to the real shop.
 - [ ] Unplug the network cable or switch Wi-Fi off. Within about 15 seconds the top bar turns amber:
       **Offline · cash only**.
 - [ ] Make 3 cash sales. Each saves and prints. The top bar counts them as "waiting to send".
-- [ ] Press Pay: the Card button is switched off and says why.
+- [ ] Press Pay: the Card button still works (the card machine has its own connection) and says so.
 - [ ] Close the till completely and open it again, still offline: it opens straight to the till, and the
       waiting count is still there.
 - [ ] Switch the internet back on: the light goes green and the waiting count clears by itself.
@@ -86,6 +95,8 @@ Do the whole list there once, then connect the till to the real shop.
 - [ ] **More → Reports → X report**: prints. Check the sales total against your own count of the practice sales.
 - [ ] Count the cash in the drawer. **More → Reports → Z report**, type the counted total: the report shows
       "Exactly right", "Over by" or "Short by", and the difference is what you expect.
+- [ ] Run the card machine's own end-of-day report and type its total when the till asks: the Z report shows
+      "They match", or by how much the two differ.
 - [ ] The till now asks to **Start the day** again. **Past reports** shows the Z report you just made.
 
 ## 10. Check the records arrived (Atakan, with Claude)
@@ -102,7 +113,7 @@ Do the whole list there once, then connect the till to the real shop.
 
 ## Not in this version
 
-- Card payments: the Card button says "not set up" until the shop's Stripe account and reader are connected.
-- Refunds without a receipt, and refunds to a card.
+- A link between the till and the card machine: the cashier types the amount into the card machine by hand.
+- Refunds without a receipt.
 - Percentage discounts, promotions, weighed items, loyalty, customer accounts, stock levels.
 - Viewing Z reports inside the Retail Aid app.

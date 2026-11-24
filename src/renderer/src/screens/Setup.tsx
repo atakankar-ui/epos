@@ -91,7 +91,7 @@ export function Setup(props: {
               <strong>{linkWord}</strong>
               <p>
                 {status.link === 'online' && 'Sales are sent to the shop\'s records as they are made.'}
-                {status.link === 'offline' && 'The till keeps selling for cash. Sales are saved on this PC and sent when the internet is back.'}
+                {status.link === 'offline' && 'The till keeps selling. Sales are saved on this PC and sent when the internet is back.'}
                 {status.link === 'signin' && 'The till keeps selling, but its sign-in has run out, so sales cannot be sent until someone signs in again below.'}
               </p>
             </div>

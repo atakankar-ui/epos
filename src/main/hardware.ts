@@ -82,9 +82,10 @@ export function registerHardware(db: LocalDb, getWindow: () => BrowserWindow | u
   ipcMain.handle('hardware:afterRefund', (_e, refundId: string) => attempt(async () => {
     const c = config()
     if (c.printer.kind === 'none') return { printed: false, drawer: false }
-    if (c.autoPrint) await sendToPrinter(c.printer, toEscPos(refundLines(refundId), c.columns, { kickDrawer: c.drawer }))
-    else if (c.drawer) await sendToPrinter(c.printer, drawerOnly())
-    return { printed: c.autoPrint, drawer: c.drawer }
+    const kickDrawer = c.drawer && db.getRefund(String(refundId))?.refund.method === 'cash' // a card refund needs no drawer
+    if (c.autoPrint) await sendToPrinter(c.printer, toEscPos(refundLines(refundId), c.columns, { kickDrawer }))
+    else if (kickDrawer) await sendToPrinter(c.printer, drawerOnly())
+    return { printed: c.autoPrint, drawer: kickDrawer }
   }))
 
   ipcMain.handle('hardware:printRefund', (_e, refundId: string) => attempt(async () => {

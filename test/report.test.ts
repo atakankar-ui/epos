@@ -37,7 +37,7 @@ function tradeADay() {
   log('void_line', 120, at('09:01'))
   const s1 = db.saveSale(buildSale({ basket: b, orgId: 'org', tillId: 'till', soldAt: at('09:02'), tender: { method: 'cash', tenderedPence: 1000 }, newId }))
   // Sale 2, card: a heater (£21.00, VAT £1.00).
-  db.saveSale(buildSale({ basket: addProduct(emptyBasket, heater, 'a').basket, orgId: 'org', tillId: 'till', soldAt: at('10:00'), tender: { method: 'card', paymentIntentId: 'pi', brand: 'visa', last4: '4242' }, newId }))
+  db.saveSale(buildSale({ basket: addProduct(emptyBasket, heater, 'a').basket, orgId: 'org', tillId: 'till', soldAt: at('10:00'), tender: { method: 'card' }, newId }))
   // Sale 3, cash: 2 colas reduced from £1.49 to £1.00 (£2.00, VAT 33p) + a 50p misc item.
   let c = overridePrice(setQty(addProduct(emptyBasket, cola, 'a').basket, 'a', 2), 'a', 100)
   c = addMiscItem(c, 50, 'b')
@@ -115,6 +115,23 @@ describe('X and Z report figures', () => {
       'Counted                             £56.00',
       'Short by                             £0.68',
     ].join('\n'))
+  })
+
+  it('compares the till\'s card takings with the card machine\'s own total, card refunds taken off', () => {
+    const day = tradeADay()
+    const heaterSale = db.findSale('T1-000002')!
+    db.saveRefund(buildRefund({ record: heaterSale, picks: { [heaterSale.items[0].id]: 1 }, already: {}, reason: 'Faulty', staffId: null, approvedBy: null, returnToStock: false, method: 'card', orgId: 'org', tillId: 'till', at: at('15:00'), newId }))
+    const data = db.dayData(day.id)
+    const none = buildReport({ kind: 'Z', tillName: 'Till 1', ...data, at: at('18:00') })
+    expect(none.cardCheck).toBeNull()
+    expect(none.refunds).toMatchObject({ count: 2, cashPence: 149, cardPence: 2100 })
+    expect(none.drawer.expectedPence).toBe(5668) // a card refund takes nothing out of the drawer
+    const short = buildReport({ kind: 'Z', tillName: 'Till 1', ...data, at: at('18:00'), cardMachinePence: 500 })
+    expect(short.cardCheck).toEqual({ tillPence: 0, machinePence: 500, differencePence: 500 })
+    const text = toText(reportLines(short, shop, 'UTC'), 42)
+    expect(text).toContain('Till says card took                  £0.00')
+    expect(text).toContain('Card machine took more by            £5.00')
+    expect(toText(reportLines(buildReport({ kind: 'Z', tillName: 'Till 1', ...data, at: at('18:00'), cardMachinePence: 0 }), shop, 'UTC'), 42)).toContain('They match')
   })
 
   it('an empty day is all zeros, not an error', () => {

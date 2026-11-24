@@ -48,6 +48,8 @@ export type Report = {
     countedPence: number | null
     differencePence: number | null // counted less expected: minus means short
   }
+  // Card takings on the till (sales less refunds) against the card machine's own end-of-day total, when typed in.
+  cardCheck?: { tillPence: number; machinePence: number; differencePence: number } | null
 }
 
 const p = (pounds: number | null | undefined): number => Math.round((pounds ?? 0) * 100)
@@ -61,6 +63,7 @@ export function buildReport(input: {
   audits: AuditRow[]
   at: Date
   countedPence?: number | null
+  cardMachinePence?: number | null
 }): Report {
   const { day } = input
   const byRate = new Map<number, RateLine>()
@@ -124,6 +127,8 @@ export function buildReport(input: {
       floatPence: day.floatPence, cashSalesPence: cash, cashRefundsPence: refundCash, expectedPence: expected,
       countedPence: counted, differencePence: counted === null ? null : counted - expected,
     },
+    cardCheck: input.cardMachinePence === null || input.cardMachinePence === undefined ? null
+      : { tillPence: card - refundCard, machinePence: input.cardMachinePence, differencePence: input.cardMachinePence - (card - refundCard) },
   }
 }
 
@@ -175,6 +180,16 @@ export function reportLines(report: Report, shop: ShopDetails, timeZone?: string
     pair('Counted', formatPence(report.drawer.countedPence))
     const d = report.drawer.differencePence
     pair(d === 0 ? 'Exactly right' : d > 0 ? 'Over by' : 'Short by', formatPence(Math.abs(d)), true)
+  }
+  if (report.cardCheck) {
+    lines.push({ kind: 'rule' })
+    text('Card machine check', { bold: true })
+    pair('  Card sales', formatPence(report.payments.cardPence))
+    pair('  Card refunds', `-${formatPence(report.refunds.cardPence)}`)
+    pair('Till says card took', formatPence(report.cardCheck.tillPence), true)
+    pair('Card machine says', formatPence(report.cardCheck.machinePence))
+    const c = report.cardCheck.differencePence
+    pair(c === 0 ? 'They match' : c > 0 ? 'Card machine took more by' : 'Card machine took less by', formatPence(Math.abs(c)), true)
   }
   return lines
 }

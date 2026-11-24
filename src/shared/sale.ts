@@ -61,7 +61,9 @@ export type SaleRecord = { sale: SaleRow; items: SaleItemRow[]; payments: Paymen
 
 export type Tender =
   | { method: 'cash'; tenderedPence: number }
-  | { method: 'card'; paymentIntentId: string; brand: string | null; last4: string | null }
+  // Card: taken on the shop's own card machine and confirmed by the cashier. The reference, brand and last
+  // four digits are only known when a card machine is linked to the till (none is yet).
+  | { method: 'card'; reference?: string | null; brand?: string | null; last4?: string | null }
 
 export function buildSale(input: {
   basket: Basket
@@ -108,9 +110,9 @@ export function buildSale(input: {
     amount: pounds(sums.totalPence),
     tendered: tender.method === 'cash' ? pounds(tender.tenderedPence) : null,
     change_given: tender.method === 'cash' ? pounds(tender.tenderedPence - sums.totalPence) : null,
-    stripe_payment_intent_id: tender.method === 'card' ? tender.paymentIntentId : null,
-    card_brand: tender.method === 'card' ? tender.brand : null,
-    card_last4: tender.method === 'card' ? tender.last4 : null,
+    stripe_payment_intent_id: tender.method === 'card' ? tender.reference ?? null : null,
+    card_brand: tender.method === 'card' ? tender.brand ?? null : null,
+    card_last4: tender.method === 'card' ? tender.last4 ?? null : null,
     paid_at: at,
   }
 

@@ -64,10 +64,12 @@ describe('receipt wording', () => {
   it('leaves voided lines off', () => expect(text).not.toContain('Bread'))
 
   it('card receipts show the card, not change', () => {
-    const card = toText(buildReceipt({ record: record({ method: 'card', paymentIntentId: 'pi', brand: 'visa', last4: '4242' }), shop, tillName: 'Till 1', timeZone: 'UTC', copy: true }), 48)
+    const card = toText(buildReceipt({ record: record({ method: 'card', reference: 'pi', brand: 'visa', last4: '4242' }), shop, tillName: 'Till 1', timeZone: 'UTC', copy: true }), 48)
     expect(card).toContain(pairLine('Card visa ****4242', '£25.97', 48))
     expect(card).not.toContain('Change')
     expect(card).toContain('** COPY **')
+    const plain = toText(buildReceipt({ record: record({ method: 'card' }), shop, tillName: 'Till 1', timeZone: 'UTC' }), 48)
+    expect(plain).toContain(pairLine('Card', '£25.97', 48))
   })
 
   it('works with no address, VAT number or footer', () => {
@@ -105,9 +107,10 @@ describe('printer bytes (ESC/POS)', () => {
 
 describe('hardware settings', () => {
   it('falls back to safe values for anything odd', () => {
-    expect(validHardware(null)).toEqual({ printer: { kind: 'none' }, columns: 48, autoPrint: true, drawer: true })
+    expect(validHardware(null)).toEqual({ printer: { kind: 'none' }, columns: 48, autoPrint: true, drawer: true, card: 'terminal' })
     expect(validHardware({ printer: { kind: 'network', host: '192.168.1.50', port: 'x' }, columns: 32, autoPrint: false, drawer: false }))
-      .toEqual({ printer: { kind: 'network', host: '192.168.1.50', port: 9100 }, columns: 32, autoPrint: false, drawer: false })
+      .toEqual({ printer: { kind: 'network', host: '192.168.1.50', port: 9100 }, columns: 32, autoPrint: false, drawer: false, card: 'terminal' })
+    expect(validHardware({ card: 'off' }).card).toBe('off')
     expect(validHardware({ printer: { kind: 'network', host: 'bad host; rm -rf' } }).printer).toEqual({ kind: 'none' })
     expect(validHardware({ printer: { kind: 'system', name: 'EPSON TM-T20III Receipt' } }).printer).toEqual({ kind: 'system', name: 'EPSON TM-T20III Receipt' })
   })

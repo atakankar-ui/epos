@@ -145,7 +145,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
   }
 
   const isTest = /test/i.test(binding.orgName)
-  const linkText = { online: 'Online', offline: 'Offline · cash only', signin: 'Sign-in needed' }[status.link]
+  const linkText = { online: 'Online', offline: 'Offline', signin: 'Sign-in needed' }[status.link]
   const locked = activeStaff(staff).length > 0 && !current
 
   return (
