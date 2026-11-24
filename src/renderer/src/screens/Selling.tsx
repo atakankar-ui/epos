@@ -11,7 +11,11 @@ type Message = { kind: 'info' | 'error'; text: string }
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', '00', 'C']
 const MAX_ENTRY = 14 // the longest barcode a scanner sends
 
-export function Selling({ index }: { index: ProductIndex }) {
+export function Selling({ index, onPay }: {
+  index: ProductIndex
+  // Saves the sale on this PC and returns its receipt number.
+  onPay: (basket: Basket, tenderedPence: number) => Promise<{ receiptNo: string }>
+}) {
   // The basket and which line is selected change together, so they live together.
   const [sale, setSale] = useState<{ basket: Basket; selectedId: string | null }>({ basket: emptyBasket, selectedId: null })
   const { basket, selectedId } = sale
@@ -22,6 +26,7 @@ export function Selling({ index }: { index: ProductIndex }) {
   const [searching, setSearching] = useState(false)
   const [query, setQuery] = useState('')
   const [confirmVoidSale, setConfirmVoidSale] = useState(false)
+  const [paying, setPaying] = useState(false)
   const listRef = useRef<HTMLUListElement>(null)
 
   const sums = useMemo(() => totals(basket), [basket])
@@ -135,6 +140,23 @@ export function Selling({ index }: { index: ProductIndex }) {
     say('info', 'Sale voided. Ready for the next customer.')
   }
 
+  // Phase 3 stand-in: cash for the exact amount. Phase 4 adds cash handed over, change and card.
+  async function pay() {
+    if (paying || !hasLiveLines(basket)) return
+    setPaying(true)
+    try {
+      const { receiptNo } = await onPay(basket, sums.totalPence)
+      setSale({ basket: emptyBasket, selectedId: null })
+      setEntry('')
+      setNeedsPrice(null)
+      say('info', `Sale saved: ${formatPence(sums.totalPence)} cash. Receipt ${receiptNo}.`)
+    } catch (err) {
+      say('error', `The sale was NOT saved: ${(err as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`)
+    } finally {
+      setPaying(false)
+    }
+  }
+
   const entryText = needsPrice
     ? entry ? formatPence(Number(entry)) : 'Price?'
     : entry
@@ -216,9 +238,9 @@ export function Selling({ index }: { index: ProductIndex }) {
           <button className="danger wide-btn" onClick={() => setConfirmVoidSale(true)} disabled={basket.lines.length === 0}>Void sale</button>
         )}
 
-        <button className="pay" disabled title="Payments arrive in Phase 4">
-          Pay {hasLiveLines(basket) ? formatPence(sums.totalPence) : ''}
-          <small>Payments come in Phase 4</small>
+        <button className="pay" onClick={() => void pay()} disabled={paying || !hasLiveLines(basket)}>
+          Cash {hasLiveLines(basket) ? formatPence(sums.totalPence) : ''}
+          <small>Exact amount for now · change and card come in Phase 4</small>
         </button>
       </section>
 

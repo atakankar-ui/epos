@@ -2,6 +2,10 @@
 // Later phases add the local database, the receipt printer and the cash drawer here.
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
+import { LocalDb } from './db'
+import type { Binding } from '../shared/local'
+import type { Product } from '../shared/products'
+import type { SaleDraft } from '../shared/sale'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -43,12 +47,34 @@ ipcMain.handle('app:info', () => ({
   platform: process.platform,
 }))
 
+// Only one copy of the till may run on a PC: two would fight over the same sales file.
+if (!app.requestSingleInstanceLock()) app.quit()
+
+let db: LocalDb
+
+function registerLocalStorage(): void {
+  db = new LocalDb(join(app.getPath('userData'), 'till.sqlite'))
+  ipcMain.handle('local:getState', () => db.getState())
+  ipcMain.handle('local:bind', (_e, binding: Binding) => db.bind(binding))
+  ipcMain.handle('local:unbind', () => db.unbind())
+  ipcMain.handle('local:getProducts', () => db.getProducts())
+  ipcMain.handle('local:replaceProducts', (_e, products: Product[]) => db.replaceProducts(products))
+  ipcMain.handle('local:saveSale', (_e, draft: SaleDraft) => ({ receiptNo: db.saveSale(draft).sale.receipt_no }))
+  ipcMain.handle('local:pendingSales', (_e, limit: number) => db.pendingSales(limit))
+  ipcMain.handle('local:markSynced', (_e, id: string) => db.markSynced(id))
+  ipcMain.handle('local:markRefused', (_e, id: string, reason: string) => db.markRefused(id, reason))
+}
+
 void app.whenReady().then(() => {
+  registerLocalStorage()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+app.on('second-instance', () => BrowserWindow.getAllWindows()[0]?.focus())
+app.on('will-quit', () => db?.close())
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

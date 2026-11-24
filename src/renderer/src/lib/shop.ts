@@ -77,7 +77,9 @@ export async function runChecks(): Promise<Check[]> {
     checks.push({
       label: 'Shelf prices',
       state: priced === all && all > 0 ? 'ok' : 'todo',
-      detail: `${n(priced)} of ${n(all)} have a selling price. The rest cannot be sold by scanning until they have one.`,
+      detail: priced === all
+        ? `All ${n(all)} have a selling price.`
+        : `${n(priced)} of ${n(all)} have a selling price. For the rest, the till asks the cashier to type the price.`,
     })
     checks.push({
       label: 'Barcodes',

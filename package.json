@@ -10,7 +10,7 @@
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "test": "vitest run",
-    "e2e": "npm run build && xvfb-run -a node test/e2e/selling.e2e.cjs"
+    "e2e": "npm run build && xvfb-run -a node test/e2e/till.e2e.cjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
