@@ -27,6 +27,9 @@ export type HardwareApi = {
   receiptText(saleId: string): Promise<string> // what the receipt says, for showing on screen
   testPrint(): Promise<PrintResult>
   testDrawer(): Promise<PrintResult>
+  openDrawer(): Promise<PrintResult> // for an approved, logged "no sale"
+  afterRefund(refundId: string): Promise<PrintResult> // open the drawer and print the refund slip
+  printRefund(refundId: string): Promise<PrintResult>
   setShopDetails(details: ShopDetails): Promise<void>
   getShopDetails(): Promise<ShopDetails>
 }

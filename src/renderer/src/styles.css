@@ -136,3 +136,27 @@ label small { font-weight: 400; }
 .tick input { min-height: 0; width: 28px; height: 28px; accent-color: var(--accent); }
 .good { color: var(--accent); font-weight: 600; }
 .reprint { min-height: 52px; width: 100%; }
+
+/* ---------- Staff, PINs, approvals, refunds ---------- */
+.who { font-weight: 700; padding: 4px 12px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); font-size: 0.9rem; }
+.overlay.top { z-index: 30; }
+.gate { width: min(560px, 100%); align-items: stretch; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tiles button { min-height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1.1rem; }
+.tiles small { color: var(--muted); font-weight: 400; font-size: 0.75rem; }
+.pinpad { display: flex; flex-direction: column; gap: 8px; align-items: stretch; text-align: center; }
+.pinpad .keys { flex: none; grid-auto-rows: 60px; }
+.pinpad p { margin: 0; }
+.pin { font-size: 1.8rem; letter-spacing: 0.3em; min-height: 56px; display: grid; place-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+.tender.approval { width: min(560px, 100%); }
+.reasons { display: flex; flex-direction: column; gap: 8px; }
+.reasons button { min-height: 60px; text-align: left; }
+.refund-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.results .stepper button { width: auto; min-width: 56px; min-height: 52px; justify-content: center; background: var(--panel); }
+.stepper strong { min-width: 5.5em; text-align: center; }
+.staff { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.staff li { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; }
+.row3 { display: flex; gap: 8px; align-items: center; }
+.row3 input { width: 9em; }
+.add-staff { display: grid; grid-template-columns: 2fr 1.2fr 1.2fr auto; gap: 10px; align-items: end; }

@@ -8,6 +8,7 @@ export type SaleRow = {
   id: string
   org_id: string
   till_id: string
+  staff_id: string | null
   receipt_seq: number
   receipt_no: string
   status: 'completed'
@@ -27,6 +28,7 @@ export type SaleItemRow = {
   barcode: string | null
   quantity: number
   unit_price: number
+  original_unit_price: number | null // only when a manager changed the price
   line_total: number
   vat_rate: number
   vat_amount: number
@@ -64,6 +66,7 @@ export function buildSale(input: {
   basket: Basket
   orgId: string
   tillId: string
+  staffId?: string | null
   soldAt: Date
   tender: Tender
   newId: () => string
@@ -88,6 +91,7 @@ export function buildSale(input: {
     barcode: line.barcode,
     quantity: line.qty,
     unit_price: pounds(line.unitPence),
+    original_unit_price: line.originalUnitPence === undefined ? null : pounds(line.originalUnitPence),
     // A voided line is kept for the record with what it would have been, flagged voided.
     line_total: pounds(line.unitPence * line.qty),
     vat_rate: line.vatRate,
@@ -114,6 +118,7 @@ export function buildSale(input: {
       id: saleId,
       org_id: orgId,
       till_id: tillId,
+      staff_id: input.staffId ?? null,
       status: 'completed',
       total: pounds(sums.totalPence),
       vat_total: pounds(sums.vatPence),

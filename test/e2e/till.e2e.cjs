@@ -36,7 +36,8 @@ const server = {
   refuseSales: false, // the database says no (as it would if the row rules rejected the sale)
   failItemsOnce: false, // the connection drops half-way through one sale
   tills: [{ id: 'old-till', name: 'Till 1', receipt_prefix: 'T1' }], // the shop already has a Till 1
-  rows: { sales: new Map(), sale_items: new Map(), payments: new Map() },
+  rows: { sales: new Map(), sale_items: new Map(), payments: new Map(), refunds: new Map(), refund_items: new Map(), audit_log: new Map() },
+  staff: [],
   posts: 0,
   card: { mode: 'missing', state: 'waiting', checks: 0, started: [] }, // the stand-in card reader
   shopSettings: [],
@@ -76,7 +77,13 @@ function handle(route) {
     if (req.method() === 'POST') { server.shopSettings = [req.postDataJSON()]; return json(route, [{ org_id: org }], 201) }
     return json(route, server.shopSettings)
   }
+  if (p === '/rest/v1/staff') {
+    if (req.method() === 'POST') { const row = { id: `staff-${server.staff.length + 1}`, active: true, ...req.postDataJSON() }; server.staff.push(row); return json(route, [{ id: row.id }], 201) }
+    if (req.method() === 'PATCH') { const row = server.staff.find((r) => `eq.${r.id}` === url.searchParams.get('id')); Object.assign(row, req.postDataJSON()); return json(route, [{ id: row.id }]) }
+    return json(route, server.staff)
+  }
   const table = p.replace('/rest/v1/', '')
+  if (server.rows[table] && req.method() === 'GET') return json(route, [...server.rows[table].values()])
   if (server.rows[table] && req.method() === 'POST') {
     server.posts++
     if (table === 'sales' && server.refuseSales) return json(route, { code: '42501', message: 'new row violates row-level security policy for table "sales"' }, 403)
@@ -105,6 +112,9 @@ const shot = async (name) => { if (shots) await win.screenshot({ path: path.join
 const linkIs = (text) => win.waitForFunction((t) => document.querySelector('[data-testid=link]')?.textContent === t, text, { timeout: 10000 })
 const waitingIs = (n, timeout = 10000) => win.waitForFunction((n) => (document.querySelector('[data-testid=waiting]')?.textContent ?? '0').startsWith(String(n)), n, { timeout })
 const setNet = async (online) => { server.offline = !online; await win.evaluate((e) => window.dispatchEvent(new Event(e)), online ? 'online' : 'offline') }
+const because = async (reason) => { await win.click(`.approval >> text="${reason}"`); await win.waitForSelector('.approval', { state: 'detached' }); await win.waitForTimeout(250) } // the log entry is written, then the screen changes
+const audits = (action) => [...server.rows.audit_log.values()].filter((a) => a.action === action)
+const pin = async (digits) => { await win.keyboard.type(digits); await win.keyboard.press('Enter') }
 const saved = () => win.waitForFunction(() => document.querySelector('.message')?.textContent.includes('Sale saved'))
 const alertText = async () => (await win.textContent('.tender [role=alert]')).trim()
 const sellCola = async () => { await scan('5000112637922'); await win.click('.pay'); await win.click('.quick >> text=Exact'); await win.click('text=Next customer'); await saved(); return message() }
@@ -132,6 +142,8 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await win.click('.actions >> text=+ 1'); assert.equal(await total(), '£19.18')
   await win.click('.actions >> text=− 1'); assert.equal(await total(), '£16.68'); step('+1 and −1 buttons')
   await win.click('.line >> text=White Bread'); await win.click('text=Void line')
+  await scan('5000112637922'); assert.equal(await total(), '£16.68') // a scan while the reason box is open adds nothing
+  await because('Scanned by mistake')
   assert.equal(await total(), '£15.48'); assert.equal(await win.locator('.line.voided').count(), 1); step('void line: struck through, taken off the total')
   await win.click('.actions >> text=Search'); await win.fill('.search input', 'heat fan'); assert.equal(await win.locator('.results button').count(), 1)
   await win.keyboard.type('12'); await win.fill('.search input', 'heater'); await win.click('.results button')
@@ -140,13 +152,13 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   assert.equal(await total(), '£38.46')
   const vat = (await win.locator('.totals .vat span').allInnerTexts()).map((t) => t.replace(/\s+/g, ' '))
   assert.deepEqual(vat, ['VAT 20%: £2.58 on £15.48', 'VAT 5%: £1.00 on £21.00', 'VAT 0%: £0.00 on £1.98']); step('VAT breakdown by rate is right')
-  await win.click('text=Void sale'); await win.click('text=No'); assert.equal(await total(), '£38.46')
-  await win.click('text=Void sale'); await win.click('text=Yes, void it'); assert.equal(await total(), '£0.00'); step('void sale asks first, then clears the basket')
+  await win.click('text=Void sale'); await win.click('.approval >> text=Cancel'); assert.equal(await total(), '£38.46')
+  await win.click('text=Void sale'); await because('Customer changed their mind'); assert.equal(await total(), '£0.00'); step('void sale asks why first, then clears the basket')
   assert.equal(server.rows.sales.size, 0); step('a voided sale sends nothing')
 
   // ----- a sale while online -----
   await scan('5000112637922'); await scan('5000112637922'); await scan('12345678905'); await scan('444')
-  await win.click('.line >> text=White Bread'); await win.click('text=Void line')
+  await win.click('.line >> text=White Bread'); await win.click('text=Void line'); await because('Wrong item or price')
   await win.click('.pay')
   assert.equal(await win.textContent('[data-testid=due]'), '£3.97')
   assert.deepEqual(await win.locator('.quick button').allInnerTexts(), ['Exact', '£5', '£10', '£20', '£50'])
@@ -164,10 +176,12 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   step('typing or scanning while paying never adds items to the basket')
   await waitingIs(0)
   const sale1 = [...server.rows.sales.values()][0]
-  assert.deepEqual({ ...sale1, id: 0, sold_at: 0 }, { id: 0, org_id: org, till_id: '33333333-3333-4333-8333-333333333333', status: 'completed', total: 3.97, vat_total: 0.5, discount_total: 0, sold_at: 0, receipt_seq: 1, receipt_no: 'T2-000001' })
+  assert.deepEqual({ ...sale1, id: 0, sold_at: 0 }, { id: 0, org_id: org, till_id: '33333333-3333-4333-8333-333333333333', staff_id: null, status: 'completed', total: 3.97, vat_total: 0.5, discount_total: 0, sold_at: 0, receipt_seq: 1, receipt_no: 'T2-000001' })
   const items1 = [...server.rows.sale_items.values()]
   assert.deepEqual(items1.map((i) => [i.line_no, i.product_id, i.quantity, i.line_total, i.vat_rate, i.vat_amount, i.voided]), [[1, 'a1', 2, 2.98, 0.2, 0.5, false], [2, 'a2', 1, 1.2, 0, 0, true], [3, 'a5', 1, 0.99, 0, 0, false]])
   assert.deepEqual([...server.rows.payments.values()].map((p) => [p.sale_id, p.method, p.amount, p.tendered, p.change_given]), [[sale1.id, 'cash', 3.97, 5, 1.03]]); step('online sale: saved, receipt T2-000001, and the database got the sale, its 3 lines (product id + quantity on each) and the payment')
+  assert.deepEqual([...server.rows.audit_log.values()].map((a) => [a.action, a.reason, a.amount, a.staff_id]), [['void_line', 'Scanned by mistake', 1.2, null], ['void_sale', 'Customer changed their mind', 38.46, null], ['void_line', 'Wrong item or price', 1.2, null]])
+  assert.equal(audits('void_line')[0].details.name, 'White Bread 800g'); step('audit log: both voided lines and the voided sale were logged with reason, amount and time, and sent')
 
   // ----- internet goes down -----
   await setNet(false); await linkIs('Offline · cash only'); step('internet off: shows "Offline · cash only"')
@@ -176,8 +190,8 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await shot('offline')
   await scan('5000112637922'); await win.click('.pay')
   assert.equal(await win.locator('.card-btn').isDisabled(), true); await win.waitForSelector('text=/Offline: card payments need the internet/')
-  await win.click('text=Back to basket'); assert.equal(await total(), '£1.49'); await win.click('text=Void sale'); await win.click('text=Yes, void it'); step('offline: the Card button is off with the reason shown; Back to basket keeps the basket')
-  await win.click('text=Setup'); await win.waitForSelector('text=Sales waiting to send: 2')
+  await win.click('text=Back to basket'); assert.equal(await total(), '£1.49'); await win.click('text=Void sale'); await because('Scanned by mistake'); await waitingIs(3); step('offline: the Card button is off with the reason shown; Back to basket keeps the basket')
+  await win.click('text=Setup'); await win.waitForSelector('text=Waiting to send: 3')
   assert.equal(await win.locator('button:has-text("Disconnect")').isDisabled(), true); step('cannot disconnect the till while sales are waiting')
   await win.click('text=Back to till')
 
@@ -186,8 +200,8 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await launch(); server.offline = true
   await win.waitForSelector('.sell', { timeout: 20000 })
   assert.match(await win.textContent('.topbar'), /Corner Test Shop.*Till 2/); step('restart with no internet: opens straight to the till, no sign-in')
-  await waitingIs(2); step('the 2 unsent sales survived the restart')
-  assert.match(await sellCola(), /Receipt T2-000004/); await waitingIs(3); step('products work from the local copy and receipt numbers carry on (T2-000004)')
+  await waitingIs(3); step('the 2 unsent sales and the unsent log entry survived the restart')
+  assert.match(await sellCola(), /Receipt T2-000004/); await waitingIs(4); step('products work from the local copy and receipt numbers carry on (T2-000004)')
 
   // ----- internet back, but the connection drops half-way through one sale -----
   server.failItemsOnce = true
@@ -203,7 +217,7 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await win.waitForSelector('.waiting.bad'); await win.click('text=Setup')
   await win.waitForSelector('text=/1 could not be accepted.*row-level security/'); await shot('refused'); step('a sale the database refuses is kept on the PC and the reason is shown in Setup')
   server.refuseSales = false
-  await win.click('text=Send and update now'); await win.waitForSelector('text=Sales waiting to send: 0')
+  await win.click('text=Send and update now'); await win.waitForSelector('text=Waiting to send: 0')
   assert.equal(server.rows.sales.size, 5); step('once accepted it is sent: 5 sales in the database')
 
   // ----- sign-in switched to another shop: its products must not reach this till -----
@@ -238,8 +252,8 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await win.selectOption('[data-testid=printer-kind]', 'network'); await win.fill('[data-testid=printer-host]', '192.168.1.50')
   await win.click('text=Print test receipt'); await win.waitForSelector('text=/Check the test receipt came out/')
   assert.equal(jobs().length, 1); assert.ok(jobs()[0].includes('Printer test')); assert.ok(!jobs()[0].includes(KICK)); step('Setup: choose a network printer, print a test receipt')
-  await win.click('button:has-text("Open drawer")'); await win.waitForSelector('text=/The drawer should have opened/')
-  assert.deepEqual([...jobs()[1]], [0x1b, 0x40, ...KICK]); step('Setup: Open drawer sends the drawer-open signal')
+  await win.click('button:has-text("Test drawer")'); await win.waitForSelector('text=/The drawer should have opened/')
+  assert.deepEqual([...jobs()[1]], [0x1b, 0x40, ...KICK]); step('Setup: Test drawer sends the drawer-open signal')
   await win.fill('[data-testid=shop-name]', 'Corner Shop Ltd'); await win.fill('[data-testid=shop-address]', '1 High Street\nLeeds LS1 1AA')
   await win.fill('[data-testid=shop-vat]', 'GB123456789'); await win.fill('[data-testid=shop-footer]', 'Thank you!')
   await win.click('text=Save receipt details'); await win.waitForSelector('text=/Every till in this shop will print these/')
@@ -261,11 +275,63 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   assert.equal(jobs().length, 5); assert.ok(jobs()[4].includes('Card visa ****4242')); assert.ok(!jobs()[4].includes(KICK)); step('card sale: receipt prints, drawer stays shut')
   await win.click('text=Next customer'); await saved()
 
+  // ----- staff, PINs, manager-only actions, refunds -----
+  assert.equal(audits('void_sale').length, 2)
+  await scan('5000112637922'); await win.keyboard.type('99'); await win.click('.actions >> text=Price')
+  await win.waitForSelector('text=/no manager has been set up yet/'); await win.click('.approval >> text=Cancel'); assert.equal(await total(), '£1.49')
+  await win.click('text=Void sale'); await because('Scanned by mistake'); step('before any staff exist: selling needs no PIN, manager-only actions are refused')
+
+  await win.click('text=Setup')
+  const addStaff = async (name, role, code) => { await win.fill('[data-testid=staff-name]', name); await win.selectOption('[data-testid=staff-role]', role); await win.fill('[data-testid=staff-pin]', code); await win.click('.add-staff >> text=Add'); await win.waitForSelector(`text=${name} was added.`) }
+  await addStaff('Amy', 'manager', '1234'); await addStaff('Bob', 'cashier', '5678')
+  assert.deepEqual(server.staff.map((r) => [r.name, r.role, r.pin_hash.length, r.pin_salt.length]), [['Amy', 'manager', 64, 32], ['Bob', 'cashier', 64, 32]])
+  assert.ok(!JSON.stringify(server.staff).includes('1234') && !JSON.stringify(server.staff).includes('5678')); step('Setup: added a manager and a cashier; their PINs are stored scrambled, never as typed')
+  await shot('staff')
+  await win.click('text=Back to till'); await win.waitForSelector('text=Who is using the till?'); await shot('gate')
+  await scan('5000112637922') // a scan on the lock page does nothing
+  await win.click('.tiles >> text=Bob'); await pin('0000'); await win.waitForSelector('text=Wrong PIN.')
+  await pin('5678'); await win.waitForSelector('.sell'); assert.equal(await win.textContent('[data-testid=who]'), 'Bob'); assert.equal(await total(), '£0.00'); step('the till is now locked until someone signs in; wrong PIN refused; Bob signs in')
+
+  await scan('5000112637922'); await win.keyboard.type('99'); await win.click('.actions >> text=Price')
+  await win.waitForSelector('text=A manager needs to allow this. Which manager?'); assert.deepEqual(await win.locator('.approval .tiles button').allInnerTexts().then((t) => t.map((x) => x.split('\n')[0])), ['Amy'])
+  await win.click('.approval .tiles >> text=Amy'); await pin('9999'); await win.waitForSelector('text=Wrong PIN.'); assert.equal(await total(), '£1.49')
+  await pin('1234'); await win.waitForSelector('text=Allowed by Amy'); await shot('approval'); await because('Reduced to clear')
+  assert.equal(await total(), '£0.99'); assert.match((await lines())[0], /£0\.99 each \(was £1\.49\)/); step('price change by a cashier: needs a manager PIN and a reason; line shows the old price')
+  await win.click('.pay'); await win.click('.quick >> text=Exact'); await win.click('text=Next customer'); await saved(); await waitingIs(0)
+  const over = audits('price_override')[0], bobSale = [...server.rows.sales.values()].find((x) => x.receipt_no === 'T2-000009')
+  assert.deepEqual([over.staff_id, over.approved_by, over.reason, over.amount, over.details.from, over.details.to], ['staff-2', 'staff-1', 'Reduced to clear', 0.99, 1.49, 0.99])
+  assert.equal(bobSale.staff_id, 'staff-2'); assert.deepEqual([...server.rows.sale_items.values()].filter((i) => i.sale_id === bobSale.id).map((i) => [i.unit_price, i.original_unit_price]), [[0.99, 1.49]]); step('the sale records who sold it and the original price; the log records who changed it, who allowed it and why')
+
+  const before = jobs().length
+  await win.click('.actions >> text=More'); await win.click('text=Open drawer (no sale)'); await win.click('.approval .tiles >> text=Amy'); await pin('1234'); await because('Giving change')
+  await win.waitForSelector('text=Drawer opened. This has been logged.'); assert.deepEqual([...jobs()[before]], [0x1b, 0x40, ...KICK]); await waitingIs(0)
+  assert.deepEqual(audits('no_sale').map((a) => [a.staff_id, a.approved_by, a.reason]), [['staff-2', 'staff-1', 'Giving change']]); step('open drawer with no sale: manager PIN, reason, drawer opens, logged')
+
+  await win.click('.actions >> text=More'); await win.click('.approval >> text=Refund')
+  await win.fill('[data-testid=refund-receipt]', '7'); await win.click('.tender button:has-text("Find")')
+  await win.waitForSelector('text=Refund from receipt T2-000007'); await win.click('.stepper >> text="+"'); await win.click('.stepper >> text="+"')
+  assert.equal(await win.textContent('[data-testid=refund-qty]'), '2 of 2'); await win.click('.stepper >> text="−"'); await shot('refund')
+  await win.click('text=Refund £1.49 in cash'); await win.click('.approval .tiles >> text=Amy'); await pin('1234'); await because('Faulty or damaged')
+  await win.waitForSelector('text=Refund slip printed.'); assert.equal(await win.textContent('[data-testid=refund-total]'), '£1.49')
+  const slip = jobs()[before + 1]; assert.deepEqual([...slip.subarray(2, 7)], [...KICK]); for (const part of ['REFUND', 'Refund T2-R000001', 'For receipt T2-000007', 'COLA 500ML', '-\x9c1.49', 'Reason: Faulty or damaged']) assert.ok(slip.toString('latin1').includes(part), 'refund slip is missing: ' + part)
+  await win.click('.done >> text=Done'); await waitingIs(0)
+  const refund = [...server.rows.refunds.values()][0], sale7 = [...server.rows.sales.values()].find((x) => x.receipt_no === 'T2-000007')
+  assert.deepEqual([refund.sale_id, refund.receipt_no, refund.total, refund.vat_total, refund.method, refund.reason, refund.staff_id, refund.approved_by], [sale7.id, 'T2-R000001', 1.49, 0.25, 'cash', 'Faulty or damaged', 'staff-2', 'staff-1'])
+  assert.deepEqual([...server.rows.refund_items.values()].map((i) => [i.refund_id, i.product_id, i.quantity, i.line_total, i.return_to_stock]), [[refund.id, 'a1', 1, 1.49, true]])
+  assert.deepEqual(audits('refund').map((a) => [a.refund_id, a.sale_id, a.amount, a.approved_by]), [[refund.id, sale7.id, 1.49, 'staff-1']]); step('refund of 1 of 2 colas: manager PIN and reason, drawer opens, slip prints, database gets the refund with product and quantity, and it is logged')
+  await win.click('.actions >> text=More'); await win.click('.approval >> text=Refund'); await win.click('.results >> text=T2-000007')
+  await win.waitForSelector('text=/1 already refunded/'); assert.equal(await win.textContent('[data-testid=refund-qty]'), '0 of 1'); await win.click('text=Different receipt'); await win.click('.tender >> text=Close'); step('the same receipt again: only the 1 cola not yet refunded can be refunded')
+
+  await win.click('.actions >> text=More'); await win.click('text=Lock the till'); await win.waitForSelector('text=Who is using the till?')
+  await win.click('.tiles >> text=Amy'); await pin('1234'); await win.waitForSelector('.sell')
+  await scan('5000112637922'); await win.keyboard.type('50'); await win.click('.actions >> text=Price'); await win.waitForSelector('text=Allowed by Amy'); await because('Damaged packaging')
+  assert.equal(await total(), '£0.50'); await win.click('text=Void sale'); await because('Scanned by mistake'); step('lock the till; a manager signed in changes a price with a reason but no second PIN')
+
   fs.rmSync(printJobs, { recursive: true, force: true }) // the printer "breaks"
   await scan('5000112637922'); await win.click('.pay'); await win.click('.quick >> text=Exact')
   await win.waitForSelector('text=/The sale is saved, but the printer did not respond/'); await shot('printer-failed')
-  await win.click('text=Next customer'); await saved(); assert.match(await message(), /Receipt T2-000009/); await waitingIs(0)
-  assert.equal(server.rows.sales.size, 9); step('printer broken: the sale is still saved and sent, and the cashier is told the receipt did not print')
+  await win.click('text=Next customer'); await saved(); assert.match(await message(), /Receipt T2-000010/); await waitingIs(0)
+  assert.equal(server.rows.sales.size, 10); step('printer broken: the sale is still saved and sent, and the cashier is told the receipt did not print')
   await win.click('text=Setup')
 
   // ----- disconnect -----

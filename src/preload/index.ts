@@ -13,6 +13,16 @@ const local: LocalApi = {
   pendingSales: (limit) => ipcRenderer.invoke('local:pendingSales', limit),
   markSynced: (id) => ipcRenderer.invoke('local:markSynced', id),
   markRefused: (id, reason) => ipcRenderer.invoke('local:markRefused', id, reason),
+  getStaff: () => ipcRenderer.invoke('local:getStaff'),
+  setStaff: (staff) => ipcRenderer.invoke('local:setStaff', staff),
+  logAudit: (row) => ipcRenderer.invoke('local:logAudit', row),
+  saveRefund: (draft) => ipcRenderer.invoke('local:saveRefund', draft),
+  findSale: (receiptNo) => ipcRenderer.invoke('local:findSale', receiptNo),
+  recentSales: (limit) => ipcRenderer.invoke('local:recentSales', limit),
+  refundedHere: (saleId, onlyUnsent) => ipcRenderer.invoke('local:refundedHere', saleId, onlyUnsent),
+  pendingOther: (limit) => ipcRenderer.invoke('local:pendingOther', limit),
+  markOtherSynced: (id) => ipcRenderer.invoke('local:markOtherSynced', id),
+  markOtherRefused: (id, reason) => ipcRenderer.invoke('local:markOtherRefused', id, reason),
 }
 
 const hardware: HardwareApi = {
@@ -24,6 +34,9 @@ const hardware: HardwareApi = {
   receiptText: (saleId) => ipcRenderer.invoke('hardware:receiptText', saleId),
   testPrint: () => ipcRenderer.invoke('hardware:testPrint'),
   testDrawer: () => ipcRenderer.invoke('hardware:testDrawer'),
+  openDrawer: () => ipcRenderer.invoke('hardware:testDrawer'),
+  afterRefund: (refundId) => ipcRenderer.invoke('hardware:afterRefund', refundId),
+  printRefund: (refundId) => ipcRenderer.invoke('hardware:printRefund', refundId),
   setShopDetails: (details) => ipcRenderer.invoke('hardware:setShopDetails', details),
   getShopDetails: () => ipcRenderer.invoke('hardware:getShopDetails'),
 }

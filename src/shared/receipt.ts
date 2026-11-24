@@ -4,6 +4,7 @@
 import { formatPence, formatRate } from './money'
 import type { ReceiptLine } from './escpos'
 import type { SaleRecord } from './sale'
+import type { RefundRecord } from './refund'
 
 export type ShopDetails = {
   name: string
@@ -82,6 +83,34 @@ export function buildReceipt(input: {
     lines.push({ kind: 'blank' })
     for (const part of shop.footer.split('\n').map((p) => p.trim()).filter(Boolean)) text(part, { align: 'centre' })
   }
+  return lines
+}
+
+export function buildRefundReceipt(input: { record: RefundRecord; shop: ShopDetails; tillName: string; timeZone?: string }): ReceiptLine[] {
+  const { record, shop } = input
+  const lines: ReceiptLine[] = []
+  const text = (t: string, extra: Partial<Extract<ReceiptLine, { kind: 'text' }>> = {}) => lines.push({ kind: 'text', text: t, ...extra })
+  text(shop.name, { align: 'centre', bold: true, big: true })
+  for (const part of (shop.address ?? '').split('\n').map((p) => p.trim()).filter(Boolean)) text(part, { align: 'centre' })
+  if (shop.vatNumber?.trim()) text(`VAT No. ${shop.vatNumber.trim()}`, { align: 'centre' })
+  lines.push({ kind: 'blank' })
+  text('REFUND', { align: 'centre', bold: true, big: true })
+  const when = new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: input.timeZone,
+  }).format(new Date(record.refund.refunded_at)).replace(',', '')
+  lines.push({ kind: 'pair', left: when, right: input.tillName })
+  text(`Refund ${record.refund.receipt_no}`)
+  text(`For receipt ${record.originalReceiptNo}`)
+  lines.push({ kind: 'rule' })
+  for (const item of record.items) {
+    lines.push({ kind: 'pair', left: item.name, right: `-${formatPence(pence(item.line_total))}` })
+    if (item.quantity !== 1) text(`  ${qty(item.quantity)} x ${formatPence(pence(item.unit_price))}`)
+  }
+  lines.push({ kind: 'rule' })
+  lines.push({ kind: 'pair', left: 'REFUNDED', right: formatPence(pence(record.refund.total)), bold: true, big: true })
+  lines.push({ kind: 'pair', left: record.refund.method === 'cash' ? 'Paid back in cash' : 'Paid back to card', right: formatPence(pence(record.refund.total)) })
+  lines.push({ kind: 'pair', left: 'VAT in this refund', right: formatPence(pence(record.refund.vat_total)) })
+  text(`Reason: ${record.refund.reason}`)
   return lines
 }
 

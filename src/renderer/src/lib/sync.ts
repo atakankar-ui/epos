@@ -25,6 +25,12 @@ function classify(error: { message?: string; code?: string }, status: number): F
   return { kind: 'refused', message }
 }
 
+async function send(table: string, rows: object[]): Promise<Failure | null> {
+  if (rows.length === 0) return null
+  const { error, status } = await supabase.from(table).upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
+  return error ? classify(error, status) : null
+}
+
 async function upload(record: SaleRecord): Promise<Failure | null> {
   const steps: Array<[string, object[]]> = [
     ['sales', [record.sale]],
@@ -69,6 +75,23 @@ export async function syncOnce(binding: Binding): Promise<SyncStatus> {
       } else {
         link = failure.kind
         break // no connection or no sign-in: the rest would fail the same way
+      }
+    }
+
+    // Then refunds and audit entries, in the order they happened (a refund needs its sale to be there first).
+    if (link === 'online') {
+      for (const item of await local.pendingOther(100)) {
+        const failure = item.kind === 'refund'
+          ? (await send('refunds', [item.record.refund])) ?? (await send('refund_items', item.record.items))
+          : await send('audit_log', [item.record])
+        if (!failure) {
+          await local.markOtherSynced(item.id)
+        } else if (failure.kind === 'refused') {
+          await local.markOtherRefused(item.id, failure.message)
+        } else {
+          link = failure.kind
+          break
+        }
       }
     }
   }

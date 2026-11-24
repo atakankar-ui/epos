@@ -44,6 +44,17 @@ Build one phase at a time and end each with: what was built, what to test, decis
   `shop_details` (source of truth: `shop_settings` table, Buyer-only to change). The drawer kick goes at the
   start of the cash sale's print job. **The Windows USB path has never run on a real Windows PC or printer.**
 
+- **Staff** (`shared/staff.ts`, `lib/staff.ts`, `screens/StaffCard.tsx`): rows in `staff` (Buyer-only to change),
+  PIN stored as PBKDF2-SHA256 salt + hash, cached in local meta `staff` for offline checks. With no staff the till
+  opens without a PIN and manager-only actions are refused; once any exist `StaffGate` locks the till.
+- **Approvals and audit** (`screens/Approval.tsx`, `shared/audit.ts`): pages call `tools.ask({title, manager,
+  reasons})` then `tools.log(...)` (both from `Till.tsx`). Manager-only: price override, refund, no-sale drawer.
+  Void line / void sale: any staff, reason required. Audit entries and refunds go into the local `outbox` table
+  and are synced after sales, in order (a refund needs its sale on the server first).
+- **Refunds** (`shared/refund.ts`, `screens/Refund.tsx`): by receipt number (this till's records, else the
+  database when online), per line and quantity, never more than sold minus already refunded, cash only, own
+  number run `T1-R000001`. No refund without a receipt yet; card refunds wait for the Stripe function.
+
 ## Rules that must hold
 
 - Offline first: a sale is saved on the till before anything else and is never lost or rejected by sync. The till
@@ -58,6 +69,8 @@ Build one phase at a time and end each with: what was built, what to test, decis
 - A card sale is saved only after the reader says approved. Declined, cancelled or unknown saves nothing.
 - Printing and the drawer happen after the sale is saved and can never block or undo it; a failure is shown to
   the cashier with a Print receipt button. Opening the drawer with no sale outside Setup is a Phase 6 manager action.
+- The audit entry is written before the action takes effect; if it cannot be written, the action does not happen.
+  Audit entries are insert-only locally too.
 - Money is VAT-inclusive pounds in the database (`numeric(10,2)`); do the sums in whole pence in the app.
 - Card payments (Stripe Terminal, server-driven) need internet and a server-side secret: that secret goes in a
   Supabase edge function, never in this app.

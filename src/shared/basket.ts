@@ -17,6 +17,7 @@ export type Line = {
   vatRate: number // 0.2, 0.05 or 0
   voided: boolean // a voided line stays visible, struck through, but counts for nothing
   priceKeyed: boolean // true when the cashier typed the price (no price on the product)
+  originalUnitPence?: number // set when a manager changed the price on this line
 }
 
 export type Basket = { lines: Line[] }
@@ -49,7 +50,7 @@ export function addProduct(
     throw new Error('This product has no price.')
   }
   const existing = basket.lines.find(
-    (l) => !l.voided && l.productId === product.id && l.unitPence === unitPence && l.qty < MAX_QTY,
+    (l) => !l.voided && l.productId === product.id && l.unitPence === unitPence && l.originalUnitPence === undefined && l.qty < MAX_QTY,
   )
   if (existing) {
     return { basket: setQty(basket, existing.id, existing.qty + 1), lineId: existing.id }
@@ -90,6 +91,16 @@ export function setQty(basket: Basket, lineId: string, qty: number): Basket {
   }
   return {
     lines: basket.lines.map((l) => (l.id === lineId && !l.voided ? { ...l, qty } : l)),
+  }
+}
+
+// A manager changes the price of one line. The price it had is kept for the record.
+export function overridePrice(basket: Basket, lineId: string, newUnitPence: number): Basket {
+  if (!Number.isInteger(newUnitPence) || newUnitPence < 0) throw new Error('Type the new price in pence first.')
+  return {
+    lines: basket.lines.map((l) => (l.id === lineId && !l.voided
+      ? { ...l, unitPence: newUnitPence, originalUnitPence: l.originalUnitPence ?? l.unitPence }
+      : l)),
   }
 }
 

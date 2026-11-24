@@ -1,6 +1,9 @@
 // The shapes passed between the screen and the till PC's own storage.
 import type { Product } from './products'
 import type { SaleDraft, SaleRecord } from './sale'
+import type { RefundDraft, RefundRecord, Refunded } from './refund'
+import type { AuditRow } from './audit'
+import type { Staff } from './staff'
 
 // Which shop and which till this PC is. Saved on the PC so the till opens with no internet.
 export type Binding = {
@@ -24,6 +27,11 @@ export type LocalState = {
 
 export type PendingSale = { id: string; record: SaleRecord }
 
+// Refunds and audit entries waiting to be sent, in the order they happened.
+export type PendingOther =
+  | { id: string; kind: 'refund'; record: RefundRecord }
+  | { id: string; kind: 'audit'; record: AuditRow }
+
 export type LocalApi = {
   getState(): Promise<LocalState>
   bind(binding: Binding): Promise<void>
@@ -34,4 +42,15 @@ export type LocalApi = {
   pendingSales(limit: number): Promise<PendingSale[]>
   markSynced(id: string): Promise<void>
   markRefused(id: string, reason: string): Promise<void>
+  // staff, refunds and the audit trail
+  getStaff(): Promise<Staff[]>
+  setStaff(staff: Staff[]): Promise<void>
+  logAudit(row: AuditRow): Promise<void>
+  saveRefund(draft: RefundDraft): Promise<{ receiptNo: string; refundId: string }>
+  findSale(receiptNo: string): Promise<SaleRecord | null>
+  recentSales(limit: number): Promise<SaleRecord[]>
+  refundedHere(saleId: string, onlyUnsent: boolean): Promise<Refunded>
+  pendingOther(limit: number): Promise<PendingOther[]>
+  markOtherSynced(id: string): Promise<void>
+  markOtherRefused(id: string, reason: string): Promise<void>
 }

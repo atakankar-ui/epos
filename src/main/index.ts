@@ -7,6 +7,9 @@ import { registerHardware } from './hardware'
 import type { Binding } from '../shared/local'
 import type { Product } from '../shared/products'
 import type { SaleDraft } from '../shared/sale'
+import type { RefundDraft } from '../shared/refund'
+import type { AuditRow } from '../shared/audit'
+import type { Staff } from '../shared/staff'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -67,6 +70,19 @@ function registerLocalStorage(): void {
   ipcMain.handle('local:pendingSales', (_e, limit: number) => db.pendingSales(limit))
   ipcMain.handle('local:markSynced', (_e, id: string) => db.markSynced(id))
   ipcMain.handle('local:markRefused', (_e, id: string, reason: string) => db.markRefused(id, reason))
+  ipcMain.handle('local:getStaff', () => db.getStaff())
+  ipcMain.handle('local:setStaff', (_e, staff: Staff[]) => db.setStaff(staff))
+  ipcMain.handle('local:logAudit', (_e, row: AuditRow) => db.logAudit(row))
+  ipcMain.handle('local:saveRefund', (_e, draft: RefundDraft) => {
+    const record = db.saveRefund(draft)
+    return { receiptNo: record.refund.receipt_no, refundId: record.refund.id }
+  })
+  ipcMain.handle('local:findSale', (_e, receiptNo: string) => db.findSale(receiptNo))
+  ipcMain.handle('local:recentSales', (_e, limit: number) => db.recentSales(limit))
+  ipcMain.handle('local:refundedHere', (_e, saleId: string, onlyUnsent: boolean) => db.refundedHere(saleId, !!onlyUnsent))
+  ipcMain.handle('local:pendingOther', (_e, limit: number) => db.pendingOther(limit))
+  ipcMain.handle('local:markOtherSynced', (_e, id: string) => db.markOtherSynced(id))
+  ipcMain.handle('local:markOtherRefused', (_e, id: string, reason: string) => db.markOtherRefused(id, reason))
   registerHardware(db, () => BrowserWindow.getAllWindows()[0])
 }
 

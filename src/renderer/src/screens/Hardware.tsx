@@ -104,7 +104,7 @@ export function PrinterCard() {
           </label>
           <div className="bar-buttons">
             <button onClick={() => void run(hw.testPrint, 'Sent to the printer. Check the test receipt came out and the dashes fit on one line.')} disabled={busy}>Print test receipt</button>
-            <button onClick={() => void run(hw.testDrawer, 'Sent to the printer. The drawer should have opened.')} disabled={busy || !config.drawer}>Open drawer</button>
+            <button onClick={() => void run(hw.testDrawer, 'Sent to the printer. The drawer should have opened.')} disabled={busy || !config.drawer}>Test drawer</button>
           </div>
         </>
       )}

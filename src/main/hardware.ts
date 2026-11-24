@@ -3,7 +3,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 import type { LocalDb } from './db'
 import { sendToPrinter } from './printer'
 import { drawerOnly, toEscPos, toText, type ReceiptLine } from '../shared/escpos'
-import { buildReceipt, testReceipt, type ShopDetails } from '../shared/receipt'
+import { buildReceipt, buildRefundReceipt, testReceipt, type ShopDetails } from '../shared/receipt'
 import { defaultHardware, validHardware, type HardwareConfig, type PrintResult } from '../shared/hardware'
 
 export function registerHardware(db: LocalDb, getWindow: () => BrowserWindow | undefined): void {
@@ -70,6 +70,26 @@ export function registerHardware(db: LocalDb, getWindow: () => BrowserWindow | u
   ipcMain.handle('hardware:printReceipt', (_e, saleId: string, copy: boolean) => attempt(async () => {
     const c = config()
     await sendToPrinter(c.printer, toEscPos(receiptLines(saleId, !!copy), c.columns))
+    return { printed: true, drawer: false }
+  }))
+
+  const refundLines = (refundId: string): ReceiptLine[] => {
+    const record = db.getRefund(String(refundId))
+    if (!record) throw new Error('That refund is not on this till.')
+    return buildRefundReceipt({ record, shop: shop(), tillName: db.binding()?.tillName ?? 'Till' })
+  }
+
+  ipcMain.handle('hardware:afterRefund', (_e, refundId: string) => attempt(async () => {
+    const c = config()
+    if (c.printer.kind === 'none') return { printed: false, drawer: false }
+    if (c.autoPrint) await sendToPrinter(c.printer, toEscPos(refundLines(refundId), c.columns, { kickDrawer: c.drawer }))
+    else if (c.drawer) await sendToPrinter(c.printer, drawerOnly())
+    return { printed: c.autoPrint, drawer: c.drawer }
+  }))
+
+  ipcMain.handle('hardware:printRefund', (_e, refundId: string) => attempt(async () => {
+    const c = config()
+    await sendToPrinter(c.printer, toEscPos(refundLines(refundId), c.columns))
     return { printed: true, drawer: false }
   }))
 

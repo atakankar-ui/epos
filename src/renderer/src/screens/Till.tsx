@@ -1,19 +1,36 @@
 // The working till. Everything it needs to sell is on this PC: it opens and sells
 // with no internet, and sends its sales when there is a connection.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { refreshProducts } from '../lib/connect'
 import { pullShopDetails } from '../lib/shopDetails'
+import { pullStaff } from '../lib/staff'
 import { syncOnce, type SyncStatus } from '../lib/sync'
 import { buildIndex, type ProductIndex } from '../../../shared/products'
 import { buildSale, type Tender } from '../../../shared/sale'
+import { auditRow, type AuditAction } from '../../../shared/audit'
+import { activeStaff, type Staff } from '../../../shared/staff'
 import type { Basket } from '../../../shared/basket'
 import type { Binding } from '../../../shared/local'
 import { Selling } from './Selling'
 import { Setup } from './Setup'
+import { Refund } from './Refund'
+import { Approval, StaffGate, type Answer, type Ask } from './Approval'
 
 const SYNC_EVERY_MS = 15_000
 const PRODUCTS_EVERY_MS = 10 * 60_000
+
+// What the selling and refund pages can ask the till to do.
+export type TillTools = {
+  staffId: string | null
+  // Ask for a reason and, for manager-only actions, a manager's PIN. null = cancelled.
+  ask: (ask: Ask) => Promise<Answer | null>
+  // Write one entry in the audit trail.
+  log: (entry: {
+    action: AuditAction; reason: string | null; approvedBy?: string | null
+    saleId?: string | null; refundId?: string | null; amountPence?: number | null; details?: Record<string, unknown>
+  }) => Promise<void>
+}
 
 export function Till({ binding, onDisconnected }: { binding: Binding; onDisconnected: () => void }) {
   const [index, setIndex] = useState<ProductIndex | null>(null)
@@ -21,16 +38,21 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
   const [productsAt, setProductsAt] = useState<string | null>(null)
   const [wrongShop, setWrongShop] = useState(false)
   const [setup, setSetup] = useState(false)
+  const [staff, setStaff] = useState<Staff[]>([])
+  const [current, setCurrent] = useState<Staff | null>(null)
+  const [asking, setAsking] = useState<{ ask: Ask; resolve: (a: Answer | null) => void } | null>(null)
+  const [refunding, setRefunding] = useState(false)
   const busy = useRef(false)
   const lastProducts = useRef(0)
 
   const loadLocal = useCallback(async () => {
-    const [products, state] = await Promise.all([window.till.local.getProducts(), window.till.local.getState()])
+    const [products, state, people] = await Promise.all([window.till.local.getProducts(), window.till.local.getState(), window.till.local.getStaff()])
     setIndex(buildIndex(products))
     setProductsAt(state.productsSyncedAt)
+    setStaff(people)
   }, [])
 
-  // One round: send waiting sales, and now and then fetch fresh prices.
+  // One round: send waiting sales, and now and then fetch fresh prices, staff and receipt details.
   const sync = useCallback(async (forceProducts = false) => {
     if (busy.current) return
     busy.current = true
@@ -41,8 +63,11 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
         lastProducts.current = Date.now()
         const ok = await refreshProducts(binding)
         setWrongShop(!ok)
-        if (ok) await loadLocal()
-        if (ok) await pullShopDetails(binding)
+        if (ok) {
+          await pullShopDetails(binding)
+          await pullStaff(binding)
+          await loadLocal()
+        }
       }
     } catch {
       // A failed round changes nothing on this PC; the next round tries again.
@@ -64,22 +89,39 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
     }
   }, [loadLocal, sync])
 
+  // Someone who has been removed (or whose PIN changed elsewhere) is signed out.
+  useEffect(() => {
+    if (current && !activeStaff(staff).some((s) => s.id === current.id && s.pinHash === current.pinHash)) setCurrent(null)
+  }, [current, staff])
+
+  const tools = useMemo<TillTools>(() => ({
+    staffId: current?.id ?? null,
+    ask: (ask) => new Promise((resolve) => setAsking({ ask, resolve })),
+    log: async (entry) => {
+      await window.till.local.logAudit(auditRow({
+        id: crypto.randomUUID(), orgId: binding.orgId, tillId: binding.tillId, at: new Date(), staffId: current?.id ?? null, ...entry,
+      }))
+      setStatus((s) => ({ ...s, waiting: s.waiting + 1 }))
+      void sync()
+    },
+  }), [binding, current, sync])
+
   // Save the sale on this PC first. Only then is it "done"; sending happens after.
   const completeSale = useCallback(async (basket: Basket, tender: Tender, saleId?: string) => {
     const draft = buildSale({
-      basket, orgId: binding.orgId, tillId: binding.tillId, soldAt: new Date(),
+      basket, orgId: binding.orgId, tillId: binding.tillId, staffId: current?.id ?? null, soldAt: new Date(),
       tender, saleId, newId: () => crypto.randomUUID(),
     })
     const saved = await window.till.local.saveSale(draft)
     setStatus((s) => ({ ...s, waiting: s.waiting + 1 }))
     void sync()
     return saved
-  }, [binding, sync])
+  }, [binding, current, sync])
 
   if (setup) {
     return (
       <Setup
-        binding={binding} status={status} productsAt={productsAt} wrongShop={wrongShop}
+        binding={binding} status={status} productsAt={productsAt} wrongShop={wrongShop} staff={staff}
         onBack={() => setSetup(false)} onSync={() => sync(true)} onDisconnected={onDisconnected}
       />
     )
@@ -87,6 +129,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
 
   const isTest = /test/i.test(binding.orgName)
   const linkText = { online: 'Online', offline: 'Offline · cash only', signin: 'Sign-in needed' }[status.link]
+  const locked = activeStaff(staff).length > 0 && !current
 
   return (
     <div className="till">
@@ -94,10 +137,11 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
         <strong>{binding.orgName}</strong>
         <span className="muted">{binding.tillName}</span>
         {isTest && <span className="test-pill">TEST SHOP</span>}
+        {current && <span className="who" data-testid="who">{current.name}</span>}
         <span className="grow" />
         {status.waiting > 0 && (
           <span className={`waiting${status.refused > 0 ? ' bad' : ''}`} data-testid="waiting">
-            {status.waiting} {status.waiting === 1 ? 'sale' : 'sales'} waiting to send
+            {status.waiting} waiting to send
           </span>
         )}
         <span className={`link ${status.link}`} data-testid="link"><i />{linkText}</span>
@@ -106,8 +150,22 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
 
       {!index ? (
         <main className="centre muted"><p className="big">Opening…</p></main>
+      ) : locked ? (
+        <StaffGate staff={staff} onSignedIn={setCurrent} />
       ) : (
-        <Selling index={index} onPay={completeSale} online={status.link === 'online'} tillId={binding.tillId} />
+        <Selling
+          index={index} onPay={completeSale} online={status.link === 'online'} tillId={binding.tillId}
+          tools={tools} blocked={!!asking || refunding}
+          onRefund={() => setRefunding(true)} onLock={current ? () => setCurrent(null) : undefined}
+        />
+      )}
+
+      {refunding && <Refund binding={binding} online={status.link === 'online'} tools={tools} onClose={() => setRefunding(false)} />}
+      {asking && (
+        <Approval
+          ask={asking.ask} staff={staff} current={current}
+          onDone={(answer) => { asking.resolve(answer); setAsking(null) }}
+        />
       )}
     </div>
   )

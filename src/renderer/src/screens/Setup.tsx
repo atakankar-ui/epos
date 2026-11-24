@@ -8,6 +8,8 @@ import type { Binding } from '../../../shared/local'
 import { SignInForm } from './SignIn'
 import { signOutQuietly } from './Till'
 import { PrinterCard, ReceiptDetailsCard } from './Hardware'
+import { StaffCard } from './StaffCard'
+import type { Staff } from '../../../shared/staff'
 
 const MARK: Record<Check['state'], string> = { ok: '✓', todo: '!', problem: '✕' }
 const WORD: Record<Check['state'], string> = { ok: 'Ready', todo: 'To do', problem: 'Problem' }
@@ -22,6 +24,7 @@ export function Setup(props: {
   status: SyncStatus
   productsAt: string | null
   wrongShop: boolean
+  staff: Staff[]
   onBack: () => void
   onSync: () => Promise<void>
   onDisconnected: () => void
@@ -96,9 +99,9 @@ export function Setup(props: {
           <li className={status.waiting === 0 ? 'ok' : status.refused > 0 ? 'problem' : 'todo'}>
             <span className="mark" aria-hidden="true">{status.waiting === 0 ? '✓' : status.refused > 0 ? '✕' : '!'}</span>
             <div>
-              <strong>Sales waiting to send: {status.waiting}</strong>
+              <strong>Waiting to send: {status.waiting}</strong>
               <p>
-                {status.waiting === 0 && 'Every sale made on this till is in the shop\'s records.'}
+                {status.waiting === 0 && 'Every sale, refund and log entry made on this till is in the shop\'s records.'}
                 {status.waiting > 0 && status.refused === 0 && 'They are safe on this PC and will go as soon as there is a connection.'}
                 {status.refused > 0 && `${status.refused} could not be accepted and will be tried again. They are safe on this PC. Reason given: ${status.lastRefusal}`}
               </p>
@@ -128,6 +131,7 @@ export function Setup(props: {
         </section>
       )}
 
+      <StaffCard binding={binding} staff={props.staff} online={status.link === 'online'} onChanged={() => props.onSync()} />
       <PrinterCard />
       <ReceiptDetailsCard binding={binding} />
 

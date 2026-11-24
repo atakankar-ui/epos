@@ -27,7 +27,7 @@ describe('turning a basket into database rows', () => {
 
   it('totals in pounds, VAT included', () => {
     expect(draft.sale).toEqual({
-      id: 'id-1', org_id: 'org', till_id: 'till', status: 'completed',
+      id: 'id-1', org_id: 'org', till_id: 'till', staff_id: null, status: 'completed',
       total: 4.97, vat_total: 0.75, discount_total: 0, sold_at: '2026-11-24T19:30:00.000Z',
     })
   })
