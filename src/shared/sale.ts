@@ -41,6 +41,9 @@ export type PaymentRow = {
   amount: number
   tendered: number | null
   change_given: number | null
+  stripe_payment_intent_id: string | null
+  card_brand: string | null
+  card_last4: string | null
   paid_at: string
 }
 
@@ -53,7 +56,9 @@ export type SaleDraft = {
 
 export type SaleRecord = { sale: SaleRow; items: SaleItemRow[]; payments: PaymentRow[] }
 
-export type Tender = { method: 'cash'; tenderedPence: number } | { method: 'card' }
+export type Tender =
+  | { method: 'cash'; tenderedPence: number }
+  | { method: 'card'; paymentIntentId: string; brand: string | null; last4: string | null }
 
 export function buildSale(input: {
   basket: Basket
@@ -62,6 +67,7 @@ export function buildSale(input: {
   soldAt: Date
   tender: Tender
   newId: () => string
+  saleId?: string // set when the id had to exist before the sale did (a card payment refers to it)
 }): SaleDraft {
   const { basket, orgId, tillId, tender, newId } = input
   const sums = totals(basket)
@@ -69,7 +75,7 @@ export function buildSale(input: {
   if (tender.method === 'cash' && tender.tenderedPence < sums.totalPence) {
     throw new Error('The cash handed over is less than the total.')
   }
-  const saleId = newId()
+  const saleId = input.saleId ?? newId()
   const at = input.soldAt.toISOString()
 
   const items: SaleItemRow[] = basket.lines.map((line, i) => ({
@@ -97,6 +103,9 @@ export function buildSale(input: {
     amount: pounds(sums.totalPence),
     tendered: tender.method === 'cash' ? pounds(tender.tenderedPence) : null,
     change_given: tender.method === 'cash' ? pounds(tender.tenderedPence - sums.totalPence) : null,
+    stripe_payment_intent_id: tender.method === 'card' ? tender.paymentIntentId : null,
+    card_brand: tender.method === 'card' ? tender.brand : null,
+    card_last4: tender.method === 'card' ? tender.last4 : null,
     paid_at: at,
   }
 

@@ -26,3 +26,15 @@ export function keyedPence(digits: string): number | null {
 export function formatRate(rate: number): string {
   return `${Math.round(rate * 10000) / 100}%`
 }
+
+// Handy "cash given" buttons: the next £5, £10, £20 and £50 at or above the total.
+// For £12.34 that is £15, £20 and £50.
+export function cashSuggestions(totalPence: number): number[] {
+  if (totalPence <= 0) return []
+  const out: number[] = []
+  for (const note of [500, 1000, 2000, 5000]) {
+    const amount = Math.ceil(totalPence / note) * note
+    if (amount !== totalPence && !out.includes(amount)) out.push(amount)
+  }
+  return out.sort((a, b) => a - b).slice(0, 4)
+}

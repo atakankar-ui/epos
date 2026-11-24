@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { refreshProducts } from '../lib/connect'
 import { syncOnce, type SyncStatus } from '../lib/sync'
 import { buildIndex, type ProductIndex } from '../../../shared/products'
-import { buildSale } from '../../../shared/sale'
+import { buildSale, type Tender } from '../../../shared/sale'
 import type { Basket } from '../../../shared/basket'
 import type { Binding } from '../../../shared/local'
 import { Selling } from './Selling'
@@ -63,10 +63,10 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
   }, [loadLocal, sync])
 
   // Save the sale on this PC first. Only then is it "done"; sending happens after.
-  const completeSale = useCallback(async (basket: Basket, tenderedPence: number) => {
+  const completeSale = useCallback(async (basket: Basket, tender: Tender, saleId?: string) => {
     const draft = buildSale({
       basket, orgId: binding.orgId, tillId: binding.tillId, soldAt: new Date(),
-      tender: { method: 'cash', tenderedPence }, newId: () => crypto.randomUUID(),
+      tender, saleId, newId: () => crypto.randomUUID(),
     })
     const saved = await window.till.local.saveSale(draft)
     setStatus((s) => ({ ...s, waiting: s.waiting + 1 }))
@@ -105,7 +105,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
       {!index ? (
         <main className="centre muted"><p className="big">Opening…</p></main>
       ) : (
-        <Selling index={index} onPay={completeSale} />
+        <Selling index={index} onPay={completeSale} online={status.link === 'online'} tillId={binding.tillId} />
       )}
     </div>
   )

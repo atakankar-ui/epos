@@ -105,3 +105,24 @@ footer { margin-top: auto; }
 .waiting.bad { color: var(--bad); }
 .pay:disabled { background: var(--panel); color: var(--muted); border-color: var(--line); opacity: 1; }
 .page { overflow-y: auto; height: 100%; }
+
+/* ---------- Taking payment ---------- */
+.overlay:has(.tender) { place-items: center; }
+.tender { width: min(980px, 100%); max-height: 100%; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.tender-top { display: flex; justify-content: space-between; align-items: center; }
+.tender-top div { display: flex; align-items: baseline; gap: 14px; }
+.tender-top strong { font-size: 2.6rem; font-variant-numeric: tabular-nums; }
+.tender-body { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; }
+.tender-body section { display: flex; flex-direction: column; gap: 8px; }
+.tender-body h2 { margin: 0; }
+.tender .keys { flex: none; grid-auto-rows: 52px; }
+.change-line { font-size: 1.3rem; font-weight: 700; color: var(--accent); margin: 0; }
+.change-line.short { color: var(--warn); }
+.quick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.quick button { min-height: 52px; padding: 0 6px; }
+.take { min-height: 64px; }
+.card-btn { min-height: 120px; font-size: 1.5rem; font-weight: 800; background: #2563eb; border-color: #2563eb; color: #fff; }
+.card-btn:disabled { background: var(--bg); color: var(--muted); border-color: var(--line); opacity: 1; }
+.tender.done { width: min(560px, 100%); align-items: center; text-align: center; padding: 32px; gap: 10px; }
+.change { font-size: 5rem; font-weight: 800; margin: 0; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.next { min-height: 76px; width: 100%; font-size: 1.4rem; margin-top: 12px; }

@@ -5,16 +5,20 @@ import {
 } from '../../../shared/basket'
 import { formatPence, formatRate, keyedPence } from '../../../shared/money'
 import { findByBarcode, searchProducts, type Product, type ProductIndex } from '../../../shared/products'
+import type { Tender as TenderType } from '../../../shared/sale'
+import { Tender } from './Tender'
 
 type Message = { kind: 'info' | 'error'; text: string }
 
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', '00', 'C']
 const MAX_ENTRY = 14 // the longest barcode a scanner sends
 
-export function Selling({ index, onPay }: {
+export function Selling({ index, onPay, online, tillId }: {
   index: ProductIndex
   // Saves the sale on this PC and returns its receipt number.
-  onPay: (basket: Basket, tenderedPence: number) => Promise<{ receiptNo: string }>
+  onPay: (basket: Basket, tender: TenderType, saleId?: string) => Promise<{ receiptNo: string }>
+  online: boolean
+  tillId: string
 }) {
   // The basket and which line is selected change together, so they live together.
   const [sale, setSale] = useState<{ basket: Basket; selectedId: string | null }>({ basket: emptyBasket, selectedId: null })
@@ -26,7 +30,7 @@ export function Selling({ index, onPay }: {
   const [searching, setSearching] = useState(false)
   const [query, setQuery] = useState('')
   const [confirmVoidSale, setConfirmVoidSale] = useState(false)
-  const [paying, setPaying] = useState(false)
+  const [paying, setPaying] = useState(false) // the payment page is open
   const listRef = useRef<HTMLUListElement>(null)
 
   const sums = useMemo(() => totals(basket), [basket])
@@ -83,6 +87,7 @@ export function Selling({ index, onPay }: {
   // A barcode scanner behaves like a keyboard: it types the digits, then Enter.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (paying) return // the payment page has the keyboard; a scan must not add items now
       const target = event.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
       if (event.ctrlKey || event.altKey || event.metaKey) return
@@ -93,7 +98,7 @@ export function Selling({ index, onPay }: {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [enter, press])
+  }, [enter, paying, press])
 
   // Keep the newest or selected line in view.
   useEffect(() => {
@@ -140,21 +145,13 @@ export function Selling({ index, onPay }: {
     say('info', 'Sale voided. Ready for the next customer.')
   }
 
-  // Phase 3 stand-in: cash for the exact amount. Phase 4 adds cash handed over, change and card.
-  async function pay() {
-    if (paying || !hasLiveLines(basket)) return
-    setPaying(true)
-    try {
-      const { receiptNo } = await onPay(basket, sums.totalPence)
-      setSale({ basket: emptyBasket, selectedId: null })
-      setEntry('')
-      setNeedsPrice(null)
-      say('info', `Sale saved: ${formatPence(sums.totalPence)} cash. Receipt ${receiptNo}.`)
-    } catch (err) {
-      say('error', `The sale was NOT saved: ${(err as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`)
-    } finally {
-      setPaying(false)
-    }
+  function saleFinished(done: { receiptNo: string; method: 'cash' | 'card'; changePence: number }) {
+    const how = done.method === 'card' ? 'card' : done.changePence > 0 ? `cash, ${formatPence(done.changePence)} change` : 'cash'
+    say('info', `Sale saved: ${formatPence(sums.totalPence)} ${how}. Receipt ${done.receiptNo}.`)
+    setSale({ basket: emptyBasket, selectedId: null })
+    setEntry('')
+    setNeedsPrice(null)
+    setPaying(false)
   }
 
   const entryText = needsPrice
@@ -238,11 +235,18 @@ export function Selling({ index, onPay }: {
           <button className="danger wide-btn" onClick={() => setConfirmVoidSale(true)} disabled={basket.lines.length === 0}>Void sale</button>
         )}
 
-        <button className="pay" onClick={() => void pay()} disabled={paying || !hasLiveLines(basket)}>
-          Cash {hasLiveLines(basket) ? formatPence(sums.totalPence) : ''}
-          <small>Exact amount for now · change and card come in Phase 4</small>
+        <button className="pay" onClick={() => { setSearching(false); setConfirmVoidSale(false); setPaying(true) }} disabled={!hasLiveLines(basket)}>
+          Pay {hasLiveLines(basket) ? formatPence(sums.totalPence) : ''}
         </button>
       </section>
+
+      {paying && (
+        <Tender
+          totalPence={sums.totalPence} online={online} tillId={tillId}
+          complete={(tender, saleId) => onPay(basket, tender, saleId)}
+          onBack={() => setPaying(false)} onFinished={saleFinished}
+        />
+      )}
 
       {searching && (
         <div className="overlay" role="dialog" aria-label="Search products">

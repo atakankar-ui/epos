@@ -43,7 +43,8 @@ describe('turning a basket into database rows', () => {
   it('cash payment with change', () => {
     expect(draft.payments).toEqual([{
       id: 'id-5', org_id: 'org', sale_id: 'id-1', method: 'cash',
-      amount: 4.97, tendered: 10, change_given: 5.03, paid_at: '2026-11-24T19:30:00.000Z',
+      amount: 4.97, tendered: 10, change_given: 5.03,
+      stripe_payment_intent_id: null, card_brand: null, card_last4: null, paid_at: '2026-11-24T19:30:00.000Z',
     }])
   })
 
@@ -58,6 +59,19 @@ describe('turning a basket into database rows', () => {
     expect(() => buildSale({ ...base, basket: emptyBasket, tender: { method: 'cash', tenderedPence: 0 } })).toThrow()
     expect(() => buildSale({ ...base, basket: voidLine(addProduct(emptyBasket, cola, 'l1').basket, 'l1'), tender: { method: 'cash', tenderedPence: 500 } })).toThrow()
     expect(() => buildSale({ ...base, basket: basket(), tender: { method: 'cash', tenderedPence: 496 } })).toThrow()
+  })
+
+  it('card payment: no cash figures, the card details kept, and the sale id decided beforehand', () => {
+    const card = buildSale({
+      basket: basket(), orgId: 'org', tillId: 'till', soldAt: new Date('2026-11-24T19:30:00Z'),
+      tender: { method: 'card', paymentIntentId: 'pi_123', brand: 'visa', last4: '4242' }, newId: ids(), saleId: 'sale-fixed',
+    })
+    expect(card.sale.id).toBe('sale-fixed')
+    expect(card.items.every((i) => i.sale_id === 'sale-fixed')).toBe(true)
+    expect(card.payments[0]).toMatchObject({
+      sale_id: 'sale-fixed', method: 'card', amount: 4.97, tendered: null, change_given: null,
+      stripe_payment_intent_id: 'pi_123', card_brand: 'visa', card_last4: '4242',
+    })
   })
 
   it('receipt numbers', () => {

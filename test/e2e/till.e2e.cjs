@@ -35,6 +35,7 @@ const server = {
   tills: [{ id: 'old-till', name: 'Till 1', receipt_prefix: 'T1' }], // the shop already has a Till 1
   rows: { sales: new Map(), sale_items: new Map(), payments: new Map() },
   posts: 0,
+  card: { mode: 'missing', state: 'waiting', checks: 0, started: [] }, // the stand-in card reader
 }
 
 function handle(route) {
@@ -58,6 +59,14 @@ function handle(route) {
       return json(route, till, 201)
     }
     return json(route, server.tills)
+  }
+  if (p === '/functions/v1/till-card') {
+    const body = req.postDataJSON(), card = server.card
+    if (card.mode === 'missing') return json(route, { code: 'NOT_FOUND', message: 'Requested function was not found' }, 404)
+    if (body.action === 'start') { card.state = 'waiting'; card.checks = 0; card.started.push(body); return json(route, { payment_intent_id: 'pi_test_' + card.started.length }) }
+    if (body.action === 'cancel') { card.state = 'cancelled'; return json(route, { state: 'cancelled' }) }
+    if (++card.checks >= 2 && card.state === 'waiting' && card.mode !== 'hang') card.state = card.mode // the customer takes a moment
+    return json(route, card.state === 'approved' ? { state: 'approved', brand: 'visa', last4: '4242' } : card.state === 'declined' ? { state: 'declined', message: 'Insufficient funds.' } : { state: card.state })
   }
   const table = p.replace('/rest/v1/', '')
   if (server.rows[table] && req.method() === 'POST') {
@@ -88,7 +97,9 @@ const shot = async (name) => { if (shots) await win.screenshot({ path: path.join
 const linkIs = (text) => win.waitForFunction((t) => document.querySelector('[data-testid=link]')?.textContent === t, text, { timeout: 10000 })
 const waitingIs = (n, timeout = 10000) => win.waitForFunction((n) => (document.querySelector('[data-testid=waiting]')?.textContent ?? '0').startsWith(String(n)), n, { timeout })
 const setNet = async (online) => { server.offline = !online; await win.evaluate((e) => window.dispatchEvent(new Event(e)), online ? 'online' : 'offline') }
-const sellCola = async () => { await scan('5000112637922'); await win.click('.pay'); await win.waitForFunction(() => document.querySelector('.message')?.textContent.includes('Sale saved')); return message() }
+const saved = () => win.waitForFunction(() => document.querySelector('.message')?.textContent.includes('Sale saved'))
+const alertText = async () => (await win.textContent('.tender [role=alert]')).trim()
+const sellCola = async () => { await scan('5000112637922'); await win.click('.pay'); await win.click('.quick >> text=Exact'); await win.click('text=Next customer'); await saved(); return message() }
 
 ;(async () => {
   // ----- first start: sign in, connect, download -----
@@ -128,20 +139,36 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   // ----- a sale while online -----
   await scan('5000112637922'); await scan('5000112637922'); await scan('12345678905'); await scan('444')
   await win.click('.line >> text=White Bread'); await win.click('text=Void line')
-  await win.click('.pay'); await win.waitForFunction(() => document.querySelector('.message')?.textContent.includes('Sale saved'))
-  assert.equal(await message(), 'Sale saved: £3.97 cash. Receipt T2-000001.'); assert.equal(await total(), '£0.00')
+  await win.click('.pay')
+  assert.equal(await win.textContent('[data-testid=due]'), '£3.97')
+  assert.deepEqual(await win.locator('.quick button').allInnerTexts(), ['Exact', '£5', '£10', '£20', '£50'])
+  await win.keyboard.type('3'); assert.equal(await win.textContent('[data-testid=change-line]'), '£3.94 short')
+  assert.equal(await win.locator('text=Take cash').isDisabled(), true); await win.keyboard.press('Enter') // not enough: Enter does nothing
+  await scan('') ; await win.keyboard.type('00') // £3.00, still short
+  assert.equal(await win.textContent('[data-testid=change-line]'), '£0.97 short')
+  await win.click('.tender .keys >> text="C"'); await win.keyboard.type('500')
+  assert.equal(await win.textContent('[data-testid=change-line]'), 'Change £1.03'); step('payment page: cash typed in, shows what is short, then the change')
+  await shot('tender')
+  await win.keyboard.press('Enter')
+  assert.equal(await win.textContent('[data-testid=change]'), '£1.03'); await shot('change')
+  await win.click('text=Next customer'); await saved()
+  assert.equal(await message(), 'Sale saved: £3.97 cash, £1.03 change. Receipt T2-000001.'); assert.equal(await total(), '£0.00'); assert.equal((await lines()).length, 0)
+  step('typing or scanning while paying never adds items to the basket')
   await waitingIs(0)
   const sale1 = [...server.rows.sales.values()][0]
   assert.deepEqual({ ...sale1, id: 0, sold_at: 0 }, { id: 0, org_id: org, till_id: '33333333-3333-4333-8333-333333333333', status: 'completed', total: 3.97, vat_total: 0.5, discount_total: 0, sold_at: 0, receipt_seq: 1, receipt_no: 'T2-000001' })
   const items1 = [...server.rows.sale_items.values()]
   assert.deepEqual(items1.map((i) => [i.line_no, i.product_id, i.quantity, i.line_total, i.vat_rate, i.vat_amount, i.voided]), [[1, 'a1', 2, 2.98, 0.2, 0.5, false], [2, 'a2', 1, 1.2, 0, 0, true], [3, 'a5', 1, 0.99, 0, 0, false]])
-  assert.deepEqual([...server.rows.payments.values()].map((p) => [p.sale_id, p.method, p.amount, p.tendered, p.change_given]), [[sale1.id, 'cash', 3.97, 3.97, 0]]); step('online sale: saved, receipt T2-000001, and the database got the sale, its 3 lines (product id + quantity on each) and the payment')
+  assert.deepEqual([...server.rows.payments.values()].map((p) => [p.sale_id, p.method, p.amount, p.tendered, p.change_given]), [[sale1.id, 'cash', 3.97, 5, 1.03]]); step('online sale: saved, receipt T2-000001, and the database got the sale, its 3 lines (product id + quantity on each) and the payment')
 
   // ----- internet goes down -----
   await setNet(false); await linkIs('Offline · cash only'); step('internet off: shows "Offline · cash only"')
   assert.match(await sellCola(), /Receipt T2-000002/); assert.match(await sellCola(), /Receipt T2-000003/)
   await waitingIs(2); assert.equal(server.rows.sales.size, 1); step('two sales made offline: saved on the PC, "2 sales waiting to send"')
   await shot('offline')
+  await scan('5000112637922'); await win.click('.pay')
+  assert.equal(await win.locator('.card-btn').isDisabled(), true); await win.waitForSelector('text=/Offline: card payments need the internet/')
+  await win.click('text=Back to basket'); assert.equal(await total(), '£1.49'); await win.click('text=Void sale'); await win.click('text=Yes, void it'); step('offline: the Card button is off with the reason shown; Back to basket keeps the basket')
   await win.click('text=Setup'); await win.waitForSelector('text=Sales waiting to send: 2')
   assert.equal(await win.locator('button:has-text("Disconnect")').isDisabled(), true); step('cannot disconnect the till while sales are waiting')
   await win.click('text=Back to till')
@@ -177,6 +204,26 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   server.actingOrg = org
   await win.click('text=Send and update now'); await win.waitForSelector('text=/fetched every 10 minutes/')
   await win.waitForSelector('text=Product check'); await shot('setup')
+
+  // ----- card payments -----
+  await win.click('text=Back to till'); await linkIs('Online')
+  await scan('333'); await win.click('.pay'); await win.click('.card-btn')
+  await win.waitForSelector('.tender [role=alert]'); assert.equal(await alertText(), 'Card payments are not set up for this till yet.'); step('card, before Stripe is set up: says so plainly, nothing saved')
+  server.card.mode = 'declined'; await win.click('.card-btn')
+  await win.waitForSelector('text=Ask the customer to tap, insert or swipe their card.'); await shot('card-waiting')
+  await win.waitForSelector('text=/Card declined: Insufficient funds/'); assert.equal(server.rows.sales.size, 5); step('card declined: reason shown, nothing saved, can try again or take cash')
+  assert.deepEqual({ ...server.card.started[0], sale_id: 0 }, { action: 'start', sale_id: 0, till_id: '33333333-3333-4333-8333-333333333333', amount_pence: 2100 }); step('the amount (£21.00 = 2100p) was sent to the reader automatically')
+  server.card.mode = 'hang'; await win.click('.card-btn')
+  await win.waitForSelector('text=Ask the customer to tap, insert or swipe their card.'); await win.click('text=Cancel card payment')
+  await win.waitForSelector('text=Card payment cancelled. Nothing was charged.'); assert.equal(server.rows.sales.size, 5); step('card cancelled by the cashier: nothing saved')
+  server.card.mode = 'approved'; await win.click('.card-btn')
+  await win.waitForSelector('text=Card approved'); assert.match(await win.textContent('.tender'), /£21\.00.*visa ending 4242.*receipt T2-000006/); await shot('card-approved')
+  await win.click('text=Next customer'); await saved(); assert.equal(await message(), 'Sale saved: £21.00 card. Receipt T2-000006.')
+  await waitingIs(0)
+  const cardPay = [...server.rows.payments.values()].find((p) => p.method === 'card')
+  assert.deepEqual([cardPay.amount, cardPay.tendered, cardPay.change_given, cardPay.stripe_payment_intent_id, cardPay.card_brand, cardPay.card_last4], [21, null, null, 'pi_test_3', 'visa', '4242'])
+  assert.equal(cardPay.sale_id, server.card.started[2].sale_id); assert.equal(server.rows.sales.get(cardPay.sale_id).total, 21); step('card approved: sale saved and sent with the card details, matched to the payment the reader took')
+  await win.click('text=Setup')
 
   // ----- disconnect -----
   await win.click('button:has-text("Disconnect")'); await win.click('text=Yes, disconnect')

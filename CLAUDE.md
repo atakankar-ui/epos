@@ -28,6 +28,14 @@ Build one phase at a time and end each with: what was built, what to test, decis
   reason, retry every round, show it in Setup. Products refresh every 10 minutes, but never when the sign-in's
   `current_org()` is not this till's shop.
 
+- **Payments** are `screens/Tender.tsx`. Cash is complete. Card: `lib/card.ts` calls an edge function named
+  `till-card` with `{action: 'start', sale_id, till_id, amount_pence}` -> `{payment_intent_id}`, then polls
+  `{action: 'status', payment_intent_id, till_id}` -> `{state: waiting|approved|declined|cancelled, brand, last4,
+  message}`, and `{action: 'cancel', ...}`. **That function does not exist yet** (needs Atakan's Stripe decisions:
+  whose Stripe account per shop, which reader; plus a `stripe_reader_id` per till). Until then the Card button
+  answers "not set up". The sale id is made before the card is taken and sent with `start`, so the function must
+  use it as the idempotency key and store it on the PaymentIntent.
+
 ## Rules that must hold
 
 - Offline first: a sale is saved on the till before anything else and is never lost or rejected by sync. The till
@@ -38,6 +46,8 @@ Build one phase at a time and end each with: what was built, what to test, decis
 - A product with no VAT code is sold at 0% VAT, silently (Atakan's decision, 24 Nov 2026; `VAT_WHEN_UNKNOWN`).
   A product with no price asks the cashier to key one; it is not written back to the product.
 - Voided lines stay in the basket, struck through, so Phase 6 can write them to the audit log.
+- While the payment page is open the basket is frozen: typed or scanned digits are cash given, never new items.
+- A card sale is saved only after the reader says approved. Declined, cancelled or unknown saves nothing.
 - Money is VAT-inclusive pounds in the database (`numeric(10,2)`); do the sums in whole pence in the app.
 - Card payments (Stripe Terminal, server-driven) need internet and a server-side secret: that secret goes in a
   Supabase edge function, never in this app.

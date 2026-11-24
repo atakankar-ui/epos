@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addMiscItem, addProduct, emptyBasket, setQty, totals, vatInside, voidLine } from '../src/shared/basket'
-import { formatPence, formatRate, keyedPence, poundsToPence } from '../src/shared/money'
+import { cashSuggestions, formatPence, formatRate, keyedPence, poundsToPence } from '../src/shared/money'
 import { buildIndex, findByBarcode, searchProducts, toProduct, type Product } from '../src/shared/products'
 
 const cola: Product = { id: 'p1', name: 'Cola 500ml', barcode: '5000112637922', pricePence: 149, vatRate: 0.2 }
@@ -25,6 +25,13 @@ describe('money', () => {
     expect(keyedPence('149')).toBe(149)
     expect(keyedPence('')).toBeNull()
     expect(keyedPence('12345678')).toBeNull()
+  })
+  it('suggests the next notes up for cash given', () => {
+    expect(cashSuggestions(1234)).toEqual([1500, 2000, 5000])
+    expect(cashSuggestions(149)).toEqual([500, 1000, 2000, 5000])
+    expect(cashSuggestions(2000)).toEqual([5000]) // exactly £20: only "more than that" is worth a button
+    expect(cashSuggestions(6001)).toEqual([6500, 7000, 8000, 10000])
+    expect(cashSuggestions(0)).toEqual([])
   })
   it('formats VAT rates', () => {
     expect(formatRate(0.2)).toBe('20%')

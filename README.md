@@ -27,8 +27,12 @@ is being built. `npm run build` checks the code and builds it; `npm start` runs 
   by rate. A product with no VAT code is sold at 0% VAT; a product with no price asks the cashier for one.
 - **Phase 3, offline and sync (done):** the till keeps its own copy of the products and every sale in a
   database file on the PC. It opens and sells with no internet, shows Online or "Offline · cash only" in the top
-  bar, and sends waiting sales in the background. The Cash button completes a sale for the exact amount for now.
-- Phases 4 to 8: payments, hardware, refunds/staff/audit, reports, trial.
+  bar, and sends waiting sales in the background.
+- **Phase 4, payments (cash done, card half done):** the Pay button opens a payment page. Cash: type what the
+  customer gave or tap Exact / £5 / £10 / £20 / £50, and the till shows the change. Card: the till's side is
+  built (send the amount, wait, approved / declined / cancelled, off when offline), but the server part that
+  talks to Stripe is not written yet, so the Card button says "not set up".
+- Phases 5 to 8: hardware, refunds/staff/audit, reports, trial.
 
 `npm test` runs the checks on the money, VAT and basket sums.
 
