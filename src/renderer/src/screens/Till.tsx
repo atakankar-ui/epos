@@ -16,6 +16,8 @@ import { Selling } from './Selling'
 import { Setup } from './Setup'
 import { Refund } from './Refund'
 import { Approval, StaffGate, type Answer, type Ask } from './Approval'
+import { Reports, StartDay } from './Reports'
+import type { DayInfo } from '../../../shared/report'
 
 const SYNC_EVERY_MS = 15_000
 const PRODUCTS_EVERY_MS = 10 * 60_000
@@ -23,6 +25,7 @@ const PRODUCTS_EVERY_MS = 10 * 60_000
 // What the selling and refund pages can ask the till to do.
 export type TillTools = {
   staffId: string | null
+  hasStaff: boolean // false until the first staff member is added in Setup
   // Ask for a reason and, for manager-only actions, a manager's PIN. null = cancelled.
   ask: (ask: Ask) => Promise<Answer | null>
   // Write one entry in the audit trail.
@@ -42,11 +45,16 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
   const [current, setCurrent] = useState<Staff | null>(null)
   const [asking, setAsking] = useState<{ ask: Ask; resolve: (a: Answer | null) => void } | null>(null)
   const [refunding, setRefunding] = useState(false)
+  const [reporting, setReporting] = useState(false)
+  const [day, setDay] = useState<DayInfo | null | undefined>(undefined) // undefined = not read yet
   const busy = useRef(false)
+  const again = useRef(false)
+  const syncRef = useRef<() => Promise<void>>(async () => undefined)
   const lastProducts = useRef(0)
 
   const loadLocal = useCallback(async () => {
-    const [products, state, people] = await Promise.all([window.till.local.getProducts(), window.till.local.getState(), window.till.local.getStaff()])
+    const [products, state, people, openDay] = await Promise.all([window.till.local.getProducts(), window.till.local.getState(), window.till.local.getStaff(), window.till.local.currentDay()])
+    setDay(openDay)
     setIndex(buildIndex(products))
     setProductsAt(state.productsSyncedAt)
     setStaff(people)
@@ -54,7 +62,10 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
 
   // One round: send waiting sales, and now and then fetch fresh prices, staff and receipt details.
   const sync = useCallback(async (forceProducts = false) => {
-    if (busy.current) return
+    if (busy.current) {
+      again.current = true // something new to send arrived mid-round: go round once more straight after
+      return
+    }
     busy.current = true
     try {
       const next = await syncOnce(binding)
@@ -73,8 +84,13 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
       // A failed round changes nothing on this PC; the next round tries again.
     } finally {
       busy.current = false
+      if (again.current) {
+        again.current = false
+        void syncRef.current()
+      }
     }
   }, [binding, loadLocal])
+  syncRef.current = sync
 
   useEffect(() => {
     void loadLocal().then(() => sync())
@@ -96,6 +112,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
 
   const tools = useMemo<TillTools>(() => ({
     staffId: current?.id ?? null,
+    hasStaff: activeStaff(staff).length > 0,
     ask: (ask) => new Promise((resolve) => setAsking({ ask, resolve })),
     log: async (entry) => {
       await window.till.local.logAudit(auditRow({
@@ -104,7 +121,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
       setStatus((s) => ({ ...s, waiting: s.waiting + 1 }))
       void sync()
     },
-  }), [binding, current, sync])
+  }), [binding, current, staff, sync])
 
   // Save the sale on this PC first. Only then is it "done"; sending happens after.
   const completeSale = useCallback(async (basket: Basket, tender: Tender, saleId?: string) => {
@@ -152,15 +169,23 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
         <main className="centre muted"><p className="big">Opening…</p></main>
       ) : locked ? (
         <StaffGate staff={staff} onSignedIn={setCurrent} />
+      ) : !day ? (
+        <StartDay tools={tools} onStarted={(d) => { setDay(d); setStatus((s) => ({ ...s, waiting: s.waiting + 1 })); void sync() }} onReports={() => setReporting(true)} />
       ) : (
         <Selling
           index={index} onPay={completeSale} online={status.link === 'online'} tillId={binding.tillId}
-          tools={tools} blocked={!!asking || refunding}
-          onRefund={() => setRefunding(true)} onLock={current ? () => setCurrent(null) : undefined}
+          tools={tools} blocked={!!asking || refunding || reporting}
+          onRefund={() => setRefunding(true)} onReports={() => setReporting(true)} onLock={current ? () => setCurrent(null) : undefined}
         />
       )}
 
       {refunding && <Refund binding={binding} online={status.link === 'online'} tools={tools} onClose={() => setRefunding(false)} />}
+      {reporting && (
+        <Reports
+          binding={binding} day={day ?? null} tools={tools} onClose={() => setReporting(false)}
+          onClosed={() => { setDay(null); setStatus((s) => ({ ...s, waiting: s.waiting + 1 })); void sync() }}
+        />
+      )}
       {asking && (
         <Approval
           ask={asking.ask} staff={staff} current={current}

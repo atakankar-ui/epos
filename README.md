@@ -39,7 +39,10 @@ is being built. `npm run build` checks the code and builds it; `npm start` runs 
 - **Phase 6, staff, refunds and audit (done):** staff sign in with their own PIN (managed in Setup). Voids ask
   for a reason. Price changes, refunds and opening the drawer with no sale need a manager's PIN and a reason.
   Refunds are by receipt, by line and quantity, in cash. Every one of these is written to the audit log.
-- Phases 7 and 8: reports, trial.
+- **Phase 7, reports (done):** each till has a trading day, started by typing the cash float. An X report shows
+  the day so far; a Z report asks for the counted cash, fixes the figures, closes the day and starts the next Z
+  number. Both print, and the Z report is saved in the database (`day_sessions.report`).
+- Phase 8: trial.
 
 `npm test` runs the checks on the money, VAT and basket sums.
 

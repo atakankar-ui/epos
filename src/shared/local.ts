@@ -4,6 +4,14 @@ import type { SaleDraft, SaleRecord } from './sale'
 import type { RefundDraft, RefundRecord, Refunded } from './refund'
 import type { AuditRow } from './audit'
 import type { Staff } from './staff'
+import type { DayInfo, Report } from './report'
+
+// Everything that happened in one trading day on this till.
+export type DayData = { day: DayInfo; sales: SaleRecord[]; refunds: RefundRecord[]; audits: AuditRow[] }
+
+// What is sent to the database for a trading day.
+export type DayOpenRow = { id: string; org_id: string; till_id: string; z_number: number; opened_at: string; opened_by: string | null; opening_float: number }
+export type DayCloseRow = { id: string; closed_at: string; closed_by: string | null; counted_cash: number | null; report: Report }
 
 // Which shop and which till this PC is. Saved on the PC so the till opens with no internet.
 export type Binding = {
@@ -31,6 +39,8 @@ export type PendingSale = { id: string; record: SaleRecord }
 export type PendingOther =
   | { id: string; kind: 'refund'; record: RefundRecord }
   | { id: string; kind: 'audit'; record: AuditRow }
+  | { id: string; kind: 'day_open'; record: DayOpenRow }
+  | { id: string; kind: 'day_close'; record: DayCloseRow }
 
 export type LocalApi = {
   getState(): Promise<LocalState>
@@ -50,7 +60,13 @@ export type LocalApi = {
   findSale(receiptNo: string): Promise<SaleRecord | null>
   recentSales(limit: number): Promise<SaleRecord[]>
   refundedHere(saleId: string, onlyUnsent: boolean): Promise<Refunded>
-  pendingOther(limit: number): Promise<PendingOther[]>
+  pendingOther(limit: number, onlyDayOpens?: boolean): Promise<PendingOther[]>
   markOtherSynced(id: string): Promise<void>
   markOtherRefused(id: string, reason: string): Promise<void>
+  // trading days and reports
+  currentDay(): Promise<DayInfo | null>
+  openDay(input: { id: string; openedBy: string | null; floatPence: number; at: string }): Promise<DayInfo>
+  closeDay(input: { id: string; closedBy: string | null; countedPence: number | null; at: string; report: Report }): Promise<DayInfo>
+  dayData(dayId: string): Promise<DayData>
+  listDays(limit: number): Promise<DayInfo[]>
 }

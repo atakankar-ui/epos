@@ -8,6 +8,7 @@ export type SaleRow = {
   id: string
   org_id: string
   till_id: string
+  day_session_id: string | null // the trading day; filled in by the till's own storage when the sale is saved
   staff_id: string | null
   receipt_seq: number
   receipt_no: string
@@ -118,6 +119,7 @@ export function buildSale(input: {
       id: saleId,
       org_id: orgId,
       till_id: tillId,
+      day_session_id: null,
       staff_id: input.staffId ?? null,
       status: 'completed',
       total: pounds(sums.totalPence),

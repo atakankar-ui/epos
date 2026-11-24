@@ -93,6 +93,17 @@ export function registerHardware(db: LocalDb, getWindow: () => BrowserWindow | u
     return { printed: true, drawer: false }
   }))
 
+  ipcMain.handle('hardware:printLines', (_e, lines: ReceiptLine[]) => attempt(async () => {
+    const c = config()
+    if (!Array.isArray(lines) || lines.length > 400) throw new Error('That is not something the till can print.')
+    const safe: ReceiptLine[] = lines.map((l) => (l?.kind === 'pair'
+      ? { kind: 'pair', left: String(l.left).slice(0, 200), right: String(l.right).slice(0, 60), bold: !!l.bold, big: !!l.big }
+      : l?.kind === 'text' ? { kind: 'text', text: String(l.text).slice(0, 200), align: l.align, bold: !!l.bold, big: !!l.big }
+        : l?.kind === 'rule' ? { kind: 'rule' } : { kind: 'blank' }))
+    await sendToPrinter(c.printer, toEscPos(safe, c.columns))
+    return { printed: true, drawer: false }
+  }))
+
   ipcMain.handle('hardware:testPrint', () => attempt(async () => {
     const c = config()
     await sendToPrinter(c.printer, toEscPos(testReceipt(shop(), db.binding()?.tillName ?? 'Till', c.columns), c.columns))

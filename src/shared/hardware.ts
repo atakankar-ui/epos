@@ -1,5 +1,6 @@
 // The receipt printer and cash drawer settings for one till PC.
 import type { ShopDetails } from './receipt'
+import type { ReceiptLine } from './escpos'
 
 export type PrinterChoice =
   | { kind: 'none' }
@@ -26,6 +27,7 @@ export type HardwareApi = {
   printReceipt(saleId: string, copy: boolean): Promise<PrintResult>
   receiptText(saleId: string): Promise<string> // what the receipt says, for showing on screen
   testPrint(): Promise<PrintResult>
+  printLines(lines: ReceiptLine[]): Promise<PrintResult> // a report
   testDrawer(): Promise<PrintResult>
   openDrawer(): Promise<PrintResult> // for an approved, logged "no sale"
   afterRefund(refundId: string): Promise<PrintResult> // open the drawer and print the refund slip

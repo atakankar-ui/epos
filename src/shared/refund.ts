@@ -6,6 +6,7 @@ export type RefundRow = {
   id: string
   org_id: string
   till_id: string
+  day_session_id: string | null
   staff_id: string | null
   approved_by: string | null
   sale_id: string
@@ -84,7 +85,7 @@ export function buildRefund(input: {
   if (items.length === 0) throw new Error('Choose at least one item to refund.')
   return {
     refund: {
-      id: refundId, org_id: input.orgId, till_id: input.tillId, staff_id: input.staffId, approved_by: input.approvedBy,
+      id: refundId, org_id: input.orgId, till_id: input.tillId, day_session_id: null, staff_id: input.staffId, approved_by: input.approvedBy,
       sale_id: record.sale.id, method: 'cash', total: totalPence / 100, vat_total: vatPence / 100,
       reason: input.reason.trim(), refunded_at: input.at.toISOString(),
     },

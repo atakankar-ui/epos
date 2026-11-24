@@ -2,7 +2,7 @@
 // A sale is only marked "sent" when the sale, its lines and its payment are all in.
 // Sending the same sale twice is harmless: the database ignores rows it already has.
 import { supabase } from './supabase'
-import type { Binding } from '../../../shared/local'
+import type { Binding, PendingOther } from '../../../shared/local'
 import type { SaleRecord } from '../../../shared/sale'
 
 export type Link = 'online' | 'offline' | 'signin'
@@ -29,6 +29,20 @@ async function send(table: string, rows: object[]): Promise<Failure | null> {
   if (rows.length === 0) return null
   const { error, status } = await supabase.from(table).upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
   return error ? classify(error, status) : null
+}
+
+async function sendOther(item: PendingOther): Promise<Failure | null> {
+  switch (item.kind) {
+    case 'refund': return (await send('refunds', [item.record.refund])) ?? (await send('refund_items', item.record.items))
+    case 'audit': return send('audit_log', [item.record])
+    case 'day_open': return send('day_sessions', [item.record])
+    case 'day_close': {
+      // Close the day once. If it is already closed there (sent twice), nothing changes and that is fine.
+      const { id, ...closing } = item.record
+      const { error, status } = await supabase.from('day_sessions').update(closing).eq('id', id).is('closed_at', null)
+      return error ? classify(error, status) : null
+    }
+  }
 }
 
 async function upload(record: SaleRecord): Promise<Failure | null> {
@@ -61,8 +75,15 @@ export async function syncOnce(binding: Binding): Promise<SyncStatus> {
   if (!data.session) {
     link = navigator.onLine ? 'signin' : 'offline'
   } else {
-    const waiting = await local.pendingSales(50)
-    if (waiting.length === 0) {
+    // Day openings go first: the database will not take a sale for a day it has not heard of.
+    for (const item of await local.pendingOther(50, true)) {
+      const failure = await sendOther(item)
+      if (!failure) await local.markOtherSynced(item.id)
+      else if (failure.kind === 'refused') await local.markOtherRefused(item.id, failure.message)
+      else { link = failure.kind; break }
+    }
+    const waiting = link === 'online' ? await local.pendingSales(50) : []
+    if (waiting.length === 0 && link === 'online') {
       const failure = await ping(binding)
       if (failure) link = failure.kind === 'signin' ? 'signin' : failure.kind === 'offline' ? 'offline' : 'online'
     }
@@ -81,9 +102,7 @@ export async function syncOnce(binding: Binding): Promise<SyncStatus> {
     // Then refunds and audit entries, in the order they happened (a refund needs its sale to be there first).
     if (link === 'online') {
       for (const item of await local.pendingOther(100)) {
-        const failure = item.kind === 'refund'
-          ? (await send('refunds', [item.record.refund])) ?? (await send('refund_items', item.record.items))
-          : await send('audit_log', [item.record])
+        const failure = await sendOther(item)
         if (!failure) {
           await local.markOtherSynced(item.id)
         } else if (failure.kind === 'refused') {

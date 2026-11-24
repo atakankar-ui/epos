@@ -4,7 +4,8 @@
 // lost connection cannot lose it.
 import { DatabaseSync } from 'node:sqlite'
 import type { Product } from '../shared/products'
-import type { Binding, LocalState, PendingOther, PendingSale } from '../shared/local'
+import type { Binding, DayCloseRow, DayData, DayOpenRow, LocalState, PendingOther, PendingSale } from '../shared/local'
+import type { DayInfo, Report } from '../shared/report'
 import { refundReceiptNumber, type RefundDraft, type RefundRecord, type Refunded } from '../shared/refund'
 import type { AuditRow } from '../shared/audit'
 import type { Staff } from '../shared/staff'
@@ -44,6 +45,8 @@ export class LocalDb {
         last_error text
       );
       create index if not exists outbox_waiting on outbox (seq) where synced_at is null;
+      -- Trading days on this till. At most one is open (closed_at is null).
+      create table if not exists days (id text primary key, z_number integer not null, opened_at text not null, closed_at text, payload text not null);
     `)
   }
 
@@ -138,7 +141,8 @@ export class LocalDb {
       }
       const key = `next_seq:${binding.tillId}`
       const seq = Number(this.getMeta(key) ?? '1')
-      const record = withReceipt(draft, binding.receiptPrefix, seq)
+      const stamped = { ...draft, sale: { ...draft.sale, day_session_id: this.currentDay()?.id ?? null } }
+      const record = withReceipt(stamped, binding.receiptPrefix, seq)
       this.db.prepare('insert into sales (id, receipt_seq, payload, created_at) values (?, ?, ?, ?)')
         .run(record.sale.id, seq, JSON.stringify(record), new Date().toISOString())
       this.setMeta(key, String(seq + 1))
@@ -180,7 +184,7 @@ export class LocalDb {
   }
 
   // ---------- refunds and the audit trail ----------
-  private addToOutbox(id: string, kind: 'refund' | 'audit', payload: unknown): void {
+  private addToOutbox(id: string, kind: PendingOther['kind'], payload: unknown): void {
     this.db.prepare('insert into outbox (id, kind, payload, created_at) values (?, ?, ?, ?)')
       .run(id, kind, JSON.stringify(payload), new Date().toISOString())
   }
@@ -198,7 +202,7 @@ export class LocalDb {
       if (draft.refund.till_id !== binding.tillId || draft.refund.org_id !== binding.orgId) throw new Error('This refund belongs to a different till.')
       const key = `next_refund_seq:${binding.tillId}`
       const seq = Number(this.getMeta(key) ?? '1')
-      const record: RefundRecord = { ...draft, refund: { ...draft.refund, receipt_no: refundReceiptNumber(binding.receiptPrefix, seq) } }
+      const record: RefundRecord = { ...draft, refund: { ...draft.refund, day_session_id: this.currentDay()?.id ?? null, receipt_no: refundReceiptNumber(binding.receiptPrefix, seq) } }
       this.addToOutbox(record.refund.id, 'refund', record)
       this.setMeta(key, String(seq + 1))
       return record
@@ -234,9 +238,11 @@ export class LocalDb {
     return out
   }
 
-  pendingOther(limit: number): PendingOther[] {
-    const rows = this.db.prepare('select id, kind, payload from outbox where synced_at is null order by seq limit ?')
-      .all(Math.max(1, Math.min(200, Math.floor(limit)))) as Array<{ id: string; kind: 'refund' | 'audit'; payload: string }>
+  // Waiting records in the order they happened. Day openings can be asked for on their own:
+  // they must reach the database before the sales that belong to them.
+  pendingOther(limit: number, onlyDayOpens = false): PendingOther[] {
+    const rows = this.db.prepare(`select id, kind, payload from outbox where synced_at is null and kind ${onlyDayOpens ? '=' : '<>'} 'day_open' order by seq limit ?`)
+      .all(Math.max(1, Math.min(200, Math.floor(limit)))) as Array<{ id: string; kind: PendingOther['kind']; payload: string }>
     return rows.map((r) => ({ id: r.id, kind: r.kind, record: JSON.parse(r.payload) }) as PendingOther)
   }
 
@@ -246,6 +252,64 @@ export class LocalDb {
 
   markOtherRefused(id: string, reason: string): void {
     this.db.prepare('update outbox set last_error = ? where id = ? and synced_at is null').run(String(reason).slice(0, 500), id)
+  }
+
+  // ---------- trading days ----------
+  currentDay(): DayInfo | null {
+    const row = this.db.prepare('select payload from days where closed_at is null order by z_number desc limit 1').get() as { payload: string } | undefined
+    return row ? (JSON.parse(row.payload) as DayInfo) : null
+  }
+
+  openDay(input: { id: string; openedBy: string | null; floatPence: number; at: string }): DayInfo {
+    return this.transaction(() => {
+      const binding = this.binding()
+      if (!binding) throw new Error('This till is not connected to a shop.')
+      if (this.currentDay()) throw new Error('A day is already open on this till.')
+      if (!Number.isInteger(input.floatPence) || input.floatPence < 0) throw new Error('The float must be an amount of money.')
+      const key = `next_z:${binding.tillId}`
+      const zNumber = Number(this.getMeta(key) ?? '1')
+      const day: DayInfo = {
+        id: String(input.id), zNumber, openedAt: String(input.at), openedBy: input.openedBy, floatPence: input.floatPence,
+        closedAt: null, closedBy: null, countedPence: null, report: null,
+      }
+      this.db.prepare('insert into days (id, z_number, opened_at, payload) values (?, ?, ?, ?)').run(day.id, zNumber, day.openedAt, JSON.stringify(day))
+      this.setMeta(key, String(zNumber + 1))
+      const row: DayOpenRow = { id: day.id, org_id: binding.orgId, till_id: binding.tillId, z_number: zNumber, opened_at: day.openedAt, opened_by: day.openedBy, opening_float: day.floatPence / 100 }
+      this.addToOutbox(`open:${day.id}`, 'day_open', row)
+      return day
+    })
+  }
+
+  // The Z report: fix the figures and close the day. A closed day can never be changed.
+  closeDay(input: { id: string; closedBy: string | null; countedPence: number | null; at: string; report: Report }): DayInfo {
+    return this.transaction(() => {
+      const open = this.currentDay()
+      if (!open || open.id !== input.id) throw new Error('That day is not open on this till.')
+      const day: DayInfo = { ...open, closedAt: String(input.at), closedBy: input.closedBy, countedPence: input.countedPence, report: input.report }
+      this.db.prepare('update days set closed_at = ?, payload = ? where id = ? and closed_at is null').run(day.closedAt, JSON.stringify(day), day.id)
+      const row: DayCloseRow = { id: day.id, closed_at: day.closedAt!, closed_by: day.closedBy, counted_cash: day.countedPence === null ? null : day.countedPence / 100, report: input.report }
+      this.addToOutbox(`close:${day.id}`, 'day_close', row)
+      return day
+    })
+  }
+
+  dayData(dayId: string): DayData {
+    const row = this.db.prepare('select payload from days where id = ?').get(String(dayId)) as { payload: string } | undefined
+    if (!row) throw new Error('That day is not on this till.')
+    const day = JSON.parse(row.payload) as DayInfo
+    const sales = (this.db.prepare("select payload from sales where json_extract(payload, '$.sale.day_session_id') = ? order by receipt_seq").all(day.id) as Array<{ payload: string }>)
+      .map((r) => JSON.parse(r.payload) as SaleRecord)
+    const refunds = (this.db.prepare("select payload from outbox where kind = 'refund' and json_extract(payload, '$.refund.day_session_id') = ? order by seq").all(day.id) as Array<{ payload: string }>)
+      .map((r) => JSON.parse(r.payload) as RefundRecord)
+    // Log entries have no day number of their own; they belong to the day they happened in.
+    const audits = (this.db.prepare("select payload from outbox where kind = 'audit' and json_extract(payload, '$.occurred_at') >= ? and json_extract(payload, '$.occurred_at') <= ? order by seq")
+      .all(day.openedAt, day.closedAt ?? '9999') as Array<{ payload: string }>).map((r) => JSON.parse(r.payload) as AuditRow)
+    return { day, sales, refunds, audits }
+  }
+
+  listDays(limit: number): DayInfo[] {
+    const rows = this.db.prepare('select payload from days order by z_number desc limit ?').all(Math.max(1, Math.min(100, Math.floor(limit)))) as Array<{ payload: string }>
+    return rows.map((r) => JSON.parse(r.payload) as DayInfo)
   }
 
   close(): void {

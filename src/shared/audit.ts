@@ -1,6 +1,6 @@
 // The audit trail: every void, refund, price override and drawer opening, with who, when and why.
 // Rows are only ever added. Nothing on the till or in the database can change or remove one.
-export type AuditAction = 'void_line' | 'void_sale' | 'price_override' | 'refund' | 'no_sale'
+export type AuditAction = 'void_line' | 'void_sale' | 'price_override' | 'refund' | 'no_sale' | 'x_report' | 'z_report'
 
 export type AuditRow = {
   id: string

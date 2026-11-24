@@ -15,7 +15,7 @@ type Message = { kind: 'info' | 'error'; text: string }
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', '00', 'C']
 const MAX_ENTRY = 14 // the longest barcode a scanner sends
 
-export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund, onLock }: {
+export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund, onReports, onLock }: {
   index: ProductIndex
   // Saves the sale on this PC and returns its receipt number.
   onPay: (basket: Basket, tender: TenderType, saleId?: string) => Promise<{ receiptNo: string; saleId: string }>
@@ -24,6 +24,7 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
   tools: TillTools
   blocked: boolean // another page (refund, manager approval) is on top
   onRefund: () => void
+  onReports: () => void
   onLock?: () => void
 }) {
   // The basket and which line is selected change together, so they live together.
@@ -306,6 +307,7 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
             <div className="reasons">
               <button onClick={() => { setMenu(false); onRefund() }}>Refund</button>
               <button onClick={() => void noSale()}>Open drawer (no sale)</button>
+              <button onClick={() => { setMenu(false); if (basket.lines.length > 0) say('error', 'Finish or void this sale before running a report.'); else onReports() }}>Reports (X and Z)</button>
               {onLock && <button onClick={() => { setMenu(false); if (basket.lines.length > 0) say('error', 'Finish or void this sale before locking the till.'); else onLock() }}>Lock the till</button>}
             </div>
             <button onClick={() => setMenu(false)}>Close</button>

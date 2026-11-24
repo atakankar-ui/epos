@@ -55,6 +55,14 @@ Build one phase at a time and end each with: what was built, what to test, decis
   database when online), per line and quantity, never more than sold minus already refunded, cash only, own
   number run `T1-R000001`. No refund without a receipt yet; card refunds wait for the Stripe function.
 
+- **Trading days and reports** (`shared/report.ts`, `screens/Reports.tsx`): local `days` table, at most one open;
+  `StartDay` (float) shows whenever none is. The local database stamps `day_session_id` on each sale and refund.
+  `buildReport` works from the day's local sales, refunds and audit entries (all pence) and `reportLines` prints
+  it. X: logged as audit `x_report` with the report in `details`. Z: `closeDay` fixes the report, queues
+  `day_close` (an update of `day_sessions` that only applies while `closed_at` is null) and logs `z_report`.
+  Sync order: `day_open` rows, then sales, then everything else in order. Reports need a manager once staff exist.
+  The saved report JSON (`version: 1`) is what a future Retail Aid screen should read; none exists yet.
+
 ## Rules that must hold
 
 - Offline first: a sale is saved on the till before anything else and is never lost or rejected by sync. The till
@@ -71,6 +79,7 @@ Build one phase at a time and end each with: what was built, what to test, decis
   the cashier with a Print receipt button. Opening the drawer with no sale outside Setup is a Phase 6 manager action.
 - The audit entry is written before the action takes effect; if it cannot be written, the action does not happen.
   Audit entries are insert-only locally too.
+- A closed day is never changed, locally or in the database. Selling needs an open day.
 - Money is VAT-inclusive pounds in the database (`numeric(10,2)`); do the sums in whole pence in the app.
 - Card payments (Stripe Terminal, server-driven) need internet and a server-side secret: that secret goes in a
   Supabase edge function, never in this app.

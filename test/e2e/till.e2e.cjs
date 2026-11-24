@@ -36,7 +36,7 @@ const server = {
   refuseSales: false, // the database says no (as it would if the row rules rejected the sale)
   failItemsOnce: false, // the connection drops half-way through one sale
   tills: [{ id: 'old-till', name: 'Till 1', receipt_prefix: 'T1' }], // the shop already has a Till 1
-  rows: { sales: new Map(), sale_items: new Map(), payments: new Map(), refunds: new Map(), refund_items: new Map(), audit_log: new Map() },
+  rows: { sales: new Map(), sale_items: new Map(), payments: new Map(), refunds: new Map(), refund_items: new Map(), audit_log: new Map(), day_sessions: new Map() },
   staff: [],
   posts: 0,
   card: { mode: 'missing', state: 'waiting', checks: 0, started: [] }, // the stand-in card reader
@@ -84,6 +84,11 @@ function handle(route) {
   }
   const table = p.replace('/rest/v1/', '')
   if (server.rows[table] && req.method() === 'GET') return json(route, [...server.rows[table].values()])
+  if (table === 'day_sessions' && req.method() === 'PATCH') { // close a day: only one that is still open, as the real rule says
+    const row = server.rows.day_sessions.get(url.searchParams.get('id').replace('eq.', ''))
+    if (row && !row.closed_at) Object.assign(row, req.postDataJSON())
+    return route.fulfill({ status: 204, headers: cors })
+  }
   if (server.rows[table] && req.method() === 'POST') {
     server.posts++
     if (table === 'sales' && server.refuseSales) return json(route, { code: '42501', message: 'new row violates row-level security policy for table "sales"' }, 403)
@@ -125,8 +130,12 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await win.fill('input[type=email]', 'owner@example.com')
   await win.fill('input[type=password]', 'x')
   await win.click('button[type=submit]')
-  await win.waitForSelector('.sell', { timeout: 20000 })
-  assert.match(await win.textContent('.topbar'), /Corner Test Shop.*Till 2.*TEST SHOP/)
+  await win.waitForSelector('text=Start the day', { timeout: 20000 })
+  await scan('5000'); assert.equal(await win.textContent('[data-testid=money]'), '£50.00') // Enter starts the day
+  await win.waitForSelector('.sell')
+  assert.match(await win.textContent('.topbar'), /Corner Test Shop.*Till 2.*TEST SHOP/); await waitingIs(0)
+  const day1 = [...server.rows.day_sessions.values()][0]
+  assert.deepEqual({ ...day1, id: 0, opened_at: 0 }, { id: 0, org_id: org, till_id: '33333333-3333-4333-8333-333333333333', z_number: 1, opened_at: 0, opened_by: null, opening_float: 50 }); step('start the day with a £50 float: the trading day is opened and sent')
   assert.deepEqual(server.tills.map((t) => t.receipt_prefix), ['T1', 'T2']); step('first start: registered as Till 2 (Till 1 was taken) and downloaded the products')
   await linkIs('Online'); step('shows Online')
 
@@ -176,7 +185,8 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   step('typing or scanning while paying never adds items to the basket')
   await waitingIs(0)
   const sale1 = [...server.rows.sales.values()][0]
-  assert.deepEqual({ ...sale1, id: 0, sold_at: 0 }, { id: 0, org_id: org, till_id: '33333333-3333-4333-8333-333333333333', staff_id: null, status: 'completed', total: 3.97, vat_total: 0.5, discount_total: 0, sold_at: 0, receipt_seq: 1, receipt_no: 'T2-000001' })
+  assert.equal(sale1.day_session_id, day1.id)
+  assert.deepEqual({ ...sale1, id: 0, sold_at: 0 }, { id: 0, org_id: org, till_id: '33333333-3333-4333-8333-333333333333', day_session_id: day1.id, staff_id: null, status: 'completed', total: 3.97, vat_total: 0.5, discount_total: 0, sold_at: 0, receipt_seq: 1, receipt_no: 'T2-000001' })
   const items1 = [...server.rows.sale_items.values()]
   assert.deepEqual(items1.map((i) => [i.line_no, i.product_id, i.quantity, i.line_total, i.vat_rate, i.vat_amount, i.voided]), [[1, 'a1', 2, 2.98, 0.2, 0.5, false], [2, 'a2', 1, 1.2, 0, 0, true], [3, 'a5', 1, 0.99, 0, 0, false]])
   assert.deepEqual([...server.rows.payments.values()].map((p) => [p.sale_id, p.method, p.amount, p.tendered, p.change_given]), [[sale1.id, 'cash', 3.97, 5, 1.03]]); step('online sale: saved, receipt T2-000001, and the database got the sale, its 3 lines (product id + quantity on each) and the payment')
@@ -327,10 +337,44 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await scan('5000112637922'); await win.keyboard.type('50'); await win.click('.actions >> text=Price'); await win.waitForSelector('text=Allowed by Amy'); await because('Damaged packaging')
   assert.equal(await total(), '£0.50'); await win.click('text=Void sale'); await because('Scanned by mistake'); step('lock the till; a manager signed in changes a price with a reason but no second PIN')
 
+  // ----- X and Z reports -----
+  await waitingIs(0)
+  const pence = (x) => Math.round(x * 100), allPay = [...server.rows.payments.values()]
+  const cashP = allPay.filter((x) => x.method === 'cash').reduce((t, x) => t + pence(x.amount), 0), cardP = allPay.filter((x) => x.method === 'card').reduce((t, x) => t + pence(x.amount), 0)
+  const salesP = [...server.rows.sales.values()].reduce((t, x) => t + pence(x.total), 0), gbp = (n) => '£' + (n / 100).toFixed(2)
+  assert.equal(salesP, cashP + cardP)
+  await win.click('.actions >> text=More'); await win.click('text=Reports (X and Z)'); await win.click('.reasons >> text=X report')
+  await win.waitForSelector('[data-testid=report]'); await win.waitForSelector('text=Report printed.')
+  const xText = await win.textContent('[data-testid=report]')
+  for (const part of ['X REPORT', 'Z number 1', `Sales (${server.rows.sales.size},`, gbp(salesP), gbp(cashP), gbp(cardP), 'Refunds (1)', '-£1.49', `Voided lines (${audits('void_line').length})`, `Voided sales (${audits('void_sale').length})`, 'Price reductions (1)', 'Should be in the drawer', gbp(5000 + cashP - 149)]) assert.ok(xText.includes(part), 'X report is missing: ' + part)
+  assert.ok(jobs()[jobs().length - 1].includes('X REPORT')); await shot('x-report')
+  await win.click('.report >> text=Back'); step('X report: totals match every sale and payment in the database; it prints; nothing is reset')
+  assert.equal([...server.rows.day_sessions.values()][0].closed_at, undefined)
+
+  await win.click('.reasons >> text=Z report'); await win.waitForSelector('text=Z report: count the cash')
+  await win.keyboard.type(String(5000 + cashP - 149 + 100)); await win.click('text=Close the day')
+  await win.waitForSelector('text=The day is closed. Start a new day when you are ready to sell again.'); await win.waitForSelector('text=Report printed.')
+  const zText = await win.textContent('[data-testid=report]'); assert.ok(zText.includes('Z REPORT') && /Over by\s+£1\.00/.test(zText)); await shot('z-report')
+  assert.ok(jobs()[jobs().length - 1].includes('Z REPORT'))
+  await win.click('.report >> text=Back'); await win.click('.tender >> text=Close'); await win.waitForSelector('text=Start the day'); await waitingIs(0)
+  const closed = [...server.rows.day_sessions.values()][0], rep = closed.report
+  assert.ok(closed.closed_at); assert.equal(closed.closed_by, 'staff-1'); assert.equal(pence(closed.counted_cash), 5000 + cashP - 149 + 100)
+  assert.deepEqual([rep.kind, rep.zNumber, rep.sales.count, rep.sales.totalPence, rep.payments.cashPence, rep.payments.cardPence, rep.refunds.totalPence, rep.refunds.vatPence, rep.noSales, rep.discounts.count, rep.discounts.pence, rep.voids.lineCount, rep.voids.saleCount],
+    ['Z', 1, server.rows.sales.size, salesP, cashP, cardP, 149, 25, 1, 1, 50, audits('void_line').length, audits('void_sale').length])
+  assert.deepEqual(rep.drawer, { floatPence: 5000, cashSalesPence: cashP, cashRefundsPence: 149, expectedPence: 5000 + cashP - 149, countedPence: 5000 + cashP - 49, differencePence: 100 })
+  assert.equal(rep.vat.reduce((t, v) => t + v.grossPence, 0), salesP); assert.equal(audits('z_report').length, 1); assert.equal(audits('x_report')[0].details.report.sales.totalPence, salesP)
+  step('Z report: counted cash £1 over is shown; the day is closed; the full report is saved in the database for the retail app; both reports are logged')
+
+  await win.click('text=Past reports'); await win.click('.results >> text=Z number 1'); await win.waitForSelector('[data-testid=report]')
+  assert.equal(await win.textContent('[data-testid=report]'), zText); await win.click('.report >> text=Back'); await win.click('.tender >> text=Close'); step('the closed day cannot be sold into; its Z report can be opened again, unchanged')
+  await win.click('button:has-text("Start the day")'); await win.waitForSelector('.sell'); await waitingIs(0)
+  assert.deepEqual([...server.rows.day_sessions.values()].map((d) => [d.z_number, !!d.closed_at, d.opening_float]), [[1, true, 50], [2, false, 0]]); step('a new day starts as Z number 2')
+
   fs.rmSync(printJobs, { recursive: true, force: true }) // the printer "breaks"
   await scan('5000112637922'); await win.click('.pay'); await win.click('.quick >> text=Exact')
   await win.waitForSelector('text=/The sale is saved, but the printer did not respond/'); await shot('printer-failed')
   await win.click('text=Next customer'); await saved(); assert.match(await message(), /Receipt T2-000010/); await waitingIs(0)
+  assert.equal([...server.rows.sales.values()].find((x) => x.receipt_no === 'T2-000010').day_session_id, [...server.rows.day_sessions.values()][1].id)
   assert.equal(server.rows.sales.size, 10); step('printer broken: the sale is still saved and sent, and the cashier is told the receipt did not print')
   await win.click('text=Setup')
 
