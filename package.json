@@ -8,7 +8,9 @@
     "dev": "electron-vite dev",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build": "npm run typecheck && electron-vite build",
-    "start": "electron-vite preview"
+    "start": "electron-vite preview",
+    "test": "vitest run",
+    "e2e": "npm run build && xvfb-run -a node test/e2e/selling.e2e.cjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -18,7 +20,8 @@
     "electron": "^45.4.1",
     "electron-vite": "^6.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",

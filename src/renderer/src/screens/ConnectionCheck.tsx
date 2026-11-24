@@ -5,7 +5,7 @@ import { loadShop, runChecks, type Check, type ShopInfo } from '../lib/shop'
 const MARK: Record<Check['state'], string> = { ok: '✓', todo: '!', problem: '✕' }
 const WORD: Record<Check['state'], string> = { ok: 'Ready', todo: 'To do', problem: 'Problem' }
 
-export function ConnectionCheck({ userId, email }: { userId: string; email: string }) {
+export function ConnectionCheck({ userId, email, onBack }: { userId: string; email: string; onBack: () => void }) {
   const [shop, setShop] = useState<ShopInfo | null>(null)
   const [checks, setChecks] = useState<Check[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -41,6 +41,7 @@ export function ConnectionCheck({ userId, email }: { userId: string; email: stri
           </p>
         </div>
         <div className="bar-buttons">
+          <button className="primary" onClick={onBack}>Back to till</button>
           <button onClick={() => void refresh()}>Check again</button>
           <button onClick={() => void supabase.auth.signOut()}>Sign out</button>
         </div>
@@ -66,7 +67,7 @@ export function ConnectionCheck({ userId, email }: { userId: string; email: stri
         )}
       </section>
 
-      <footer className="muted small">Till {version && `v${version}`} · Phase 1: setup. The selling screen comes next.</footer>
+      <footer className="muted small">Till {version && `v${version}`} · Setup</footer>
     </main>
   )
 }
