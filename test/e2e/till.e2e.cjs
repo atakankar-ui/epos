@@ -96,7 +96,7 @@ function handle(route) {
 let app, win
 const errors = []
 async function launch() {
-  app = await electron.launch({ executablePath: path.join(dir, 'node_modules/electron/dist/electron'), args: ['--no-sandbox', `--user-data-dir=${profile}`, dir], cwd: dir, env: { ...process.env, TILL_PRINT_TO_FILE: printJobs } })
+  app = await electron.launch({ executablePath: path.join(dir, 'node_modules/electron/dist/electron'), args: ['--no-sandbox', `--user-data-dir=${profile}`, ...(process.env.TILL_SHOT_SCALE ? [`--force-device-scale-factor=${process.env.TILL_SHOT_SCALE}`] : []), dir], cwd: dir, env: { ...process.env, TILL_PRINT_TO_FILE: printJobs } })
   win = await app.firstWindow()
   win.on('pageerror', (e) => errors.push(e.message))
   await win.route('https://gobbuzoypsfbrkayfuod.supabase.co/**', handle)
@@ -155,7 +155,7 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await scan('444'); for (const k of ['9', '9']) await win.click(`.keys >> text="${k}"`); await win.click('.misc')
   assert.equal(await total(), '£38.46')
   const vat = (await win.locator('.totals .vat span').allInnerTexts()).map((t) => t.replace(/\s+/g, ' '))
-  assert.deepEqual(vat, ['VAT 20%: £2.58 on £15.48', 'VAT 5%: £1.00 on £21.00', 'VAT 0%: £0.00 on £1.98']); step('VAT breakdown by rate is right')
+  assert.deepEqual(vat, ['VAT 20%: £2.58 on £15.48', 'VAT 5%: £1.00 on £21.00', 'VAT 0%: £0.00 on £1.98']); step('VAT breakdown by rate is right'); await shot('basket')
   await win.click('text=Void sale'); await win.click('.approval >> text=Cancel'); assert.equal(await total(), '£38.46')
   await win.click('text=Void sale'); await because('Customer changed their mind'); assert.equal(await total(), '£0.00'); step('void sale asks why first, then clears the basket')
   assert.equal(server.rows.sales.size, 0); step('a voided sale sends nothing')
@@ -310,7 +310,7 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   assert.equal(bobSale.staff_id, 'staff-2'); assert.deepEqual([...server.rows.sale_items.values()].filter((i) => i.sale_id === bobSale.id).map((i) => [i.unit_price, i.original_unit_price]), [[0.99, 1.49]]); step('the sale records who sold it and the original price; the log records who changed it, who allowed it and why')
 
   const before = jobs().length
-  await win.click('.topbar >> text=Menu'); await win.click('text=Open drawer (no sale)'); await win.click('.approval .tiles >> text=Amy'); await pin('1234'); await because('Giving change')
+  await win.click('.topbar >> text=Menu'); await shot('menu'); await win.click('text=Open drawer (no sale)'); await win.click('.approval .tiles >> text=Amy'); await pin('1234'); await because('Giving change')
   await win.waitForSelector('text=Drawer opened. This has been logged.'); assert.deepEqual([...jobs()[before]], [0x1b, 0x40, ...KICK]); await waitingIs(0)
   assert.deepEqual(audits('no_sale').map((a) => [a.staff_id, a.approved_by, a.reason]), [['staff-2', 'staff-1', 'Giving change']]); step('open drawer with no sale: manager PIN, reason, drawer opens, logged')
 
