@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addMiscItem, addProduct, emptyBasket, hasLiveLines, lineTotalPence, MAX_QTY, overridePrice, setQty, totals, voidLine,
-  type Basket,
+  addMiscItem, addProduct, discountAll, emptyBasket, hasLiveLines, lineDiscountPence, lineTotalPence, MAX_QTY,
+  overridePrice, setDiscount, setQty, totals, voidLine,
+  type Basket, type LineDiscount,
 } from '../../../shared/basket'
 import { formatPence, formatRate, keyedPence } from '../../../shared/money'
 import { findByBarcode, searchProducts, type Product, type ProductIndex } from '../../../shared/products'
 import type { Tender as TenderType } from '../../../shared/sale'
 import { Tender } from './Tender'
-import { NO_SALE_REASONS, OVERRIDE_REASONS, VOID_REASONS } from '../../../shared/audit'
+import { DISCOUNT_REASONS, NO_SALE_REASONS, OVERRIDE_REASONS, REFUND_REASONS, VOID_REASONS } from '../../../shared/audit'
+import type { ParkedSale } from '../../../shared/local'
+import type { Answer } from './Approval'
 import type { TillTools } from './Till'
 
 type Message = { kind: 'info' | 'error'; text: string }
@@ -23,10 +26,12 @@ function tileColour(name: string): string {
 }
 const MAX_ENTRY = 14 // the longest barcode a scanner sends
 
-export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund, onReports, onLock, onSetup, menu, setMenu }: {
+export function Selling({ index, onPay, onLooseRefund, online, tillId, tools, blocked, onRefund, onReports, onLock, onSetup, menu, setMenu }: {
   index: ProductIndex
   // Saves the sale on this PC and returns its receipt number.
-  onPay: (basket: Basket, tender: TenderType, saleId?: string) => Promise<{ receiptNo: string; saleId: string }>
+  onPay: (basket: Basket, tender: TenderType | TenderType[], saleId?: string) => Promise<{ receiptNo: string; saleId: string }>
+  // Refunds what is in the basket, in cash, with no receipt.
+  onLooseRefund: (basket: Basket, answer: Answer) => Promise<{ receiptNo: string; totalPence: number }>
   online: boolean
   tillId: string
   tools: TillTools
@@ -50,6 +55,9 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
   const [tab, setTab] = useState<'nobarcode' | 'top' | 'search'>('nobarcode')
   const [topIds, setTopIds] = useState<string[]>([])
   const [cardOn, setCardOn] = useState(true)
+  const [discounting, setDiscounting] = useState<'line' | 'sale' | null>(null)
+  const [parked, setParked] = useState<ParkedSale[]>([])
+  const [showParked, setShowParked] = useState(false)
   const listRef = useRef<HTMLUListElement>(null)
 
   const sums = useMemo(() => totals(basket), [basket])
@@ -65,6 +73,7 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
   useEffect(() => {
     void window.till.local.topProductIds(24).then(setTopIds)
     void window.till.hardware.getConfig().then((c) => setCardOn(c.card !== 'off'))
+    void window.till.local.getParked().then(setParked)
   }, [])
 
   const say = (kind: Message['kind'], text: string) => setMessage({ kind, text })
@@ -116,7 +125,7 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
   // A barcode scanner behaves like a keyboard: it types the digits, then Enter.
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (paying || blocked || menu) return // another page has the keyboard; a scan must not add items now
+      if (paying || blocked || menu || discounting || showParked) return // another page has the keyboard; a scan must not add items now
       const target = event.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return // typing in the search box
       if (event.ctrlKey || event.altKey || event.metaKey) return
@@ -127,7 +136,7 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [blocked, enter, menu, paying, press])
+  }, [blocked, discounting, enter, menu, paying, press, showParked])
 
   // Keep the newest or selected line in view.
   useEffect(() => {
@@ -191,6 +200,64 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
     say('info', `Price changed: ${line.name} now ${formatPence(price)}.`)
   }
 
+  // Manager only: money off the selected line or the whole sale (null = take the discount off again).
+  async function applyDiscount(scope: 'line' | 'sale', discount: LineDiscount | null) {
+    setDiscounting(null)
+    const line = selected
+    if (scope === 'line' && !line) return say('error', 'Tap a line in the basket first.')
+    const next = scope === 'line' ? setDiscount(basket, line!.id, discount) : discountAll(basket, discount)
+    const off = totals(next).discountPence
+    const what = scope === 'line' ? line!.name : 'the whole sale'
+    const how = !discount ? 'Remove the discount' : discount.kind === 'percent' ? `${discount.value}% off` : `${formatPence(discount.pence)} off`
+    const answer = await tools.ask({ title: `${how}: ${what}?`, manager: true, reasons: discount ? DISCOUNT_REASONS : [] })
+    if (!answer) return
+    if (!(await logged({
+      action: 'discount', reason: answer.reason || (discount ? null : 'Discount removed'), approvedBy: answer.approvedBy, amountPence: off,
+      details: { scope, name: scope === 'line' ? line!.name : null, discount, total_before: sums.totalPence, total_after: totals(next).totalPence },
+    }))) return
+    setSale((current) => ({ ...current, basket: next }))
+    setEntry('')
+    say('info', discount ? `Discount applied: ${how} ${what}.` : 'Discount removed.')
+  }
+
+  // Put this sale to one side and serve the next customer.
+  async function park() {
+    if (!hasLiveLines(basket)) return say('error', 'There is nothing in the basket to park.')
+    const next = [...parked, { id: crypto.randomUUID(), basket, parkedAt: new Date().toISOString(), staffId: tools.staffId }]
+    await window.till.local.setParked(next)
+    setParked(next)
+    setSale({ basket: emptyBasket, selectedId: null })
+    setEntry('')
+    setNeedsPrice(null)
+    say('info', `Sale parked (${formatPence(sums.totalPence)}). Press Parked to bring it back.`)
+  }
+
+  async function resume(sale: ParkedSale) {
+    setShowParked(false)
+    if (basket.lines.length > 0) return say('error', 'Finish, park or void the current sale first.')
+    const next = parked.filter((p) => p.id !== sale.id)
+    await window.till.local.setParked(next)
+    setParked(next)
+    setSale({ basket: sale.basket, selectedId: null })
+    say('info', 'Parked sale brought back.')
+  }
+
+  // Manager only: the returned goods have been scanned into the basket; give the money back in cash.
+  async function refundNoReceipt() {
+    setMenu(false)
+    if (!hasLiveLines(basket)) return say('error', 'Scan the items being returned first, then choose this again.')
+    const answer = await tools.ask({ title: `Refund ${formatPence(sums.totalPence)} in cash with no receipt?`, manager: true, reasons: REFUND_REASONS })
+    if (!answer) return
+    try {
+      const done = await onLooseRefund(basket, answer)
+      setSale({ basket: emptyBasket, selectedId: null })
+      setEntry('')
+      say('info', `Refunded ${formatPence(done.totalPence)} in cash with no receipt. Slip ${done.receiptNo}.`)
+    } catch (err) {
+      say('error', `The refund was NOT saved: ${(err as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, '')}`)
+    }
+  }
+
   // Manager only: open the drawer with no sale.
   async function noSale() {
     setMenu(false)
@@ -224,8 +291,9 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
     say('info', 'Sale voided. Ready for the next customer.')
   }
 
-  function saleFinished(done: { receiptNo: string; method: 'cash' | 'card'; changePence: number }) {
-    const how = done.method === 'card' ? 'card' : done.changePence > 0 ? `cash, ${formatPence(done.changePence)} change` : 'cash'
+  function saleFinished(done: { receiptNo: string; method: 'cash' | 'card'; changePence: number; summary: string }) {
+    const how = done.summary.includes('+') ? `(${done.summary})${done.changePence > 0 ? `, ${formatPence(done.changePence)} change` : ''}`
+      : done.method === 'card' ? 'card' : done.changePence > 0 ? `cash, ${formatPence(done.changePence)} change` : 'cash'
     say('info', `Sale saved: ${formatPence(sums.totalPence)} ${how}. Receipt ${done.receiptNo}.`)
     setSale({ basket: emptyBasket, selectedId: null })
     setEntry('')
@@ -265,6 +333,7 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
                     <small>
                       {line.voided ? 'VOID · ' : ''}
                       {formatPence(line.unitPence)} each{line.originalUnitPence !== undefined && ` (was ${formatPence(line.originalUnitPence)})`} · VAT {formatRate(line.vatRate)}
+                      {lineDiscountPence(line) > 0 && <b className="off"> · {line.discount?.kind === 'percent' ? `${line.discount.value}% off, ` : ''}saves {formatPence(lineDiscountPence(line))}</b>}
                     </small>
                   </span>
                   <span className="amount">{formatPence(line.voided ? line.unitPence * line.qty : lineTotalPence(line))}</span>
@@ -283,7 +352,7 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
             ))}
           </div>
           <div className="total">
-            <span>{sums.itemCount} {sums.itemCount === 1 ? 'item' : 'items'}</span>
+            <span>{sums.itemCount} {sums.itemCount === 1 ? 'item' : 'items'}{sums.discountPence > 0 && <b className="off" data-testid="saved"> · saved {formatPence(sums.discountPence)}</b>}</span>
             <strong data-testid="total">{formatPence(sums.totalPence)}</strong>
           </div>
         </footer>
@@ -336,8 +405,11 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
           <button onClick={() => selected && changeQty(selected.qty + 1)} disabled={!selected || selected.qty >= MAX_QTY}>+ 1</button>
           <button onClick={qtyFromEntry} disabled={!selected}>Qty</button>
           <button onClick={() => void changePrice()} disabled={!selected}>Price</button>
+          <button onClick={() => setDiscounting(selected ? 'line' : 'sale')} disabled={!hasLiveLines(basket)}>Discount</button>
+          <button onClick={() => void park()} disabled={!hasLiveLines(basket)}>Park</button>
           <button className="danger" onClick={() => void voidSelected()} disabled={!selected}>Void line</button>
           <button className="danger" onClick={() => void voidSale()} disabled={basket.lines.length === 0}>Void sale</button>
+          <button onClick={() => setShowParked(true)} disabled={parked.length === 0} data-testid="parked">Parked{parked.length > 0 ? ` (${parked.length})` : ''}</button>
         </div>
 
         <div className="pays">
@@ -360,12 +432,54 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
         />
       )}
 
+      {discounting && (
+        <div className="overlay" role="dialog" aria-label="Discount">
+          <div className="tender approval">
+            <h2>Discount</h2>
+            <div className="split">
+              <button className={discounting === 'line' ? 'tab on' : 'tab'} onClick={() => setDiscounting('line')} disabled={!selected}>{selected ? `This line: ${selected.name}` : 'Tap a line first'}</button>
+              <button className={discounting === 'sale' ? 'tab on' : 'tab'} onClick={() => setDiscounting('sale')}>The whole sale</button>
+            </div>
+            <div className="quick">
+              {[5, 10, 20, 50].map((value) => <button key={value} onClick={() => void applyDiscount(discounting, { kind: 'percent', value })}>{value}%</button>)}
+            </div>
+            {keyedPence(entry) ? (
+              <div className="split">
+                {Number(entry) <= 100 && <button onClick={() => void applyDiscount(discounting, { kind: 'percent', value: Number(entry) })}>{Number(entry)}% off</button>}
+                <button onClick={() => void applyDiscount(discounting, { kind: 'amount', pence: Number(entry) })}>{formatPence(Number(entry))} off</button>
+              </div>
+            ) : <p className="muted">For any other amount: close this, type the number on the keypad, then press Discount again.</p>}
+            {(discounting === 'line' ? !!selected?.discount : sums.discountPence > 0) && <button className="danger" onClick={() => void applyDiscount(discounting, null)}>Remove the discount</button>}
+            <button onClick={() => setDiscounting(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {showParked && (
+        <div className="overlay" role="dialog" aria-label="Parked sales">
+          <div className="tender approval">
+            <h2>Parked sales</h2>
+            <ul className="results">
+              {parked.map((sale) => (
+                <li key={sale.id}><button onClick={() => void resume(sale)}>
+                  <span className="name">{sale.basket.lines.filter((l) => !l.voided).map((l) => l.name).slice(0, 3).join(', ')}
+                    <small>Parked at {new Date(sale.parkedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · {totals(sale.basket).itemCount} items</small></span>
+                  <span className="amount">{formatPence(totals(sale.basket).totalPence)}</span>
+                </button></li>
+              ))}
+            </ul>
+            <button onClick={() => setShowParked(false)}>Close</button>
+          </div>
+        </div>
+      )}
+
       {menu && (
         <div className="overlay" role="dialog" aria-label="Menu">
           <div className="tender approval">
             <h2>Menu</h2>
             <div className="reasons">
-              <button onClick={() => { setMenu(false); onRefund() }}>Refund</button>
+              <button onClick={() => { setMenu(false); onRefund() }}>Refund (with a receipt)</button>
+              <button onClick={() => void refundNoReceipt()}>Refund the items in the basket (no receipt)</button>
               <button onClick={() => void noSale()}>Open drawer (no sale)</button>
               <button onClick={() => { setMenu(false); if (basket.lines.length > 0) say('error', 'Finish or void this sale before running a report.'); else onReports() }}>Reports (X and Z)</button>
               {onLock && <button onClick={() => { setMenu(false); if (basket.lines.length > 0) say('error', 'Finish or void this sale before locking the till.'); else onLock() }}>Lock the till</button>}

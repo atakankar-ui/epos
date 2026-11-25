@@ -80,6 +80,17 @@ Do the whole list there once, then connect the till to the real shop.
       slip prints. Try to refund the same item again: it is not offered.
 - [ ] **Menu → Lock the till**: back to "Who is using the till?".
 
+## 7b. Discounts, split payment, parked sales, refund with no receipt
+
+- [ ] Tap a line, press **Discount**, choose 10%: manager PIN and reason; the line shows the saving.
+- [ ] Type 150, press **Discount**, choose **The whole sale** and **£1.50 off**: the total drops by £1.50.
+- [ ] Press **Cash**, type less than the total (500), press **Take £5.00 cash, rest later**, then **Card** for
+      the rest. The receipt shows both payments.
+- [ ] Scan two items, press **Park**. Serve another customer. Press **Parked**, tap the sale: it comes back.
+- [ ] With a sale parked, try a Z report: the till refuses until the parked sale is finished or voided.
+- [ ] Scan an item a customer is returning with no receipt. **Menu → Refund the items in the basket (no
+      receipt)**: manager PIN, reason, drawer opens, slip says "No receipt".
+
 ## 8. No internet
 
 - [ ] Unplug the network cable or switch Wi-Fi off. Within about 15 seconds the top bar turns amber:
@@ -116,6 +127,5 @@ Do the whole list there once, then connect the till to the real shop.
 ## Not in this version
 
 - A link between the till and the card machine: the cashier types the amount into the card machine by hand.
-- Refunds without a receipt.
-- Percentage discounts, promotions, weighed items, loyalty, customer accounts, stock levels.
+- Multi-buy offers, age checks, weighed items, loyalty, customer accounts, stock levels.
 - Viewing Z reports inside the Retail Aid app.

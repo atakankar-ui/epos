@@ -14,11 +14,12 @@ order the first shop asks for it.
 
 - [ ] Quick-tap buttons the shop chooses and arranges itself (name, colour, tab, order). v0.10.0 has a first
       version with no setup: a "No barcode" tab (products with a price and no barcode) and a "Most sold" tab.
-- [ ] Discounts (percentage or amount off) and multi-buy offers
-- [ ] Park a sale and bring it back
-- [ ] Age check prompt for alcohol and tobacco
-- [ ] Split payment (part cash, part card)
-- [ ] Refunds without a receipt
+- [x] Discounts: percentage or amount off a line or the whole sale (v0.11.0)
+- [ ] Multi-buy offers (3 for £2.50) (needs a database change)
+- [x] Park a sale and bring it back (v0.11.0)
+- [ ] Age check prompt for alcohol and tobacco (needs a database change)
+- [x] Split payment (part cash, part card) (v0.11.0)
+- [x] Refunds without a receipt (v0.11.0)
 - [ ] Cashback, "paid out" from the drawer, and cash lifts to the safe
 - [ ] Customer-facing display (second screen showing the total)
 - [ ] Gift receipt (no prices) and email receipt

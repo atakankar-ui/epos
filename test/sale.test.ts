@@ -42,7 +42,7 @@ describe('turning a basket into database rows', () => {
 
   it('cash payment with change', () => {
     expect(draft.payments).toEqual([{
-      id: 'id-5', org_id: 'org', sale_id: 'id-1', method: 'cash',
+      id: 'id-2', org_id: 'org', sale_id: 'id-1', method: 'cash',
       amount: 4.97, tendered: 10, change_given: 5.03,
       stripe_payment_intent_id: null, card_brand: null, card_last4: null, paid_at: '2026-11-24T19:30:00.000Z',
     }])

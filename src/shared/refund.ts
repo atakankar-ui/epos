@@ -1,4 +1,5 @@
 // Turning "give the customer their money back for these lines" into database rows.
+import { lineTotalPence, lineVatPence, type Basket } from './basket'
 import { vatInside } from './basket'
 import type { SaleRecord } from './sale'
 
@@ -9,7 +10,7 @@ export type RefundRow = {
   day_session_id: string | null
   staff_id: string | null
   approved_by: string | null
-  sale_id: string
+  sale_id: string | null // null = refunded without a receipt
   receipt_no: string
   method: 'cash' | 'card'
   total: number
@@ -22,7 +23,7 @@ export type RefundItemRow = {
   id: string
   org_id: string
   refund_id: string
-  sale_item_id: string
+  sale_item_id: string | null
   product_id: string | null
   name: string
   quantity: number
@@ -33,15 +34,16 @@ export type RefundItemRow = {
   return_to_stock: boolean
 }
 
-export type RefundDraft = { refund: Omit<RefundRow, 'receipt_no'>; items: RefundItemRow[]; originalReceiptNo: string }
-export type RefundRecord = { refund: RefundRow; items: RefundItemRow[]; originalReceiptNo: string }
+export type RefundDraft = { refund: Omit<RefundRow, 'receipt_no'>; items: RefundItemRow[]; originalReceiptNo: string | null }
+export type RefundRecord = { refund: RefundRow; items: RefundItemRow[]; originalReceiptNo: string | null }
 
 // How many of each line have already been refunded: sale line id -> quantity.
 export type Refunded = Record<string, number>
 
 export function refundable(record: SaleRecord, already: Refunded): Array<{ itemId: string; name: string; unitPence: number; sold: number; left: number }> {
   return record.items.filter((i) => !i.voided).map((i) => ({
-    itemId: i.id, name: i.name, unitPence: Math.round(i.unit_price * 100), sold: i.quantity,
+    // What was actually paid for one, after any discount on the line.
+    itemId: i.id, name: i.name, unitPence: Math.round((i.line_total * 100) / i.quantity), sold: i.quantity,
     left: Math.max(0, i.quantity - (already[i.id] ?? 0)),
   }))
 }
@@ -72,14 +74,14 @@ export function buildRefund(input: {
     if (qty === 0) continue
     if (!Number.isInteger(qty) || qty < 0) throw new Error('Quantities must be whole numbers.')
     if (qty > (left.get(item.id) ?? 0)) throw new Error(`Only ${left.get(item.id) ?? 0} of "${item.name}" can still be refunded.`)
-    const unitPence = Math.round(item.unit_price * 100)
-    const gross = unitPence * qty
+    // Give back what was paid for these, after any discount: the line's total, shared by quantity.
+    const gross = Math.round((item.line_total * 100 * qty) / item.quantity)
     const vat = vatInside(gross, item.vat_rate)
     totalPence += gross
     vatPence += vat
     items.push({
       id: input.newId(), org_id: input.orgId, refund_id: refundId, sale_item_id: item.id, product_id: item.product_id,
-      name: item.name, quantity: qty, unit_price: unitPence / 100, line_total: gross / 100,
+      name: item.name, quantity: qty, unit_price: Math.round(gross / qty) / 100, line_total: gross / 100,
       vat_rate: item.vat_rate, vat_amount: vat / 100, return_to_stock: input.returnToStock,
     })
   }
@@ -92,6 +94,40 @@ export function buildRefund(input: {
     },
     items,
     originalReceiptNo: record.sale.receipt_no,
+  }
+}
+
+// A refund with no receipt: the returned goods are scanned into the basket like a sale, then refunded
+// at today's prices, in cash.
+export function buildLooseRefund(input: {
+  basket: Basket
+  reason: string
+  staffId: string | null
+  approvedBy: string | null
+  returnToStock: boolean
+  orgId: string
+  tillId: string
+  at: Date
+  newId: () => string
+}): RefundDraft {
+  if (!input.reason.trim()) throw new Error('A refund needs a reason.')
+  const refundId = input.newId()
+  const lines = input.basket.lines.filter((l) => !l.voided)
+  if (lines.length === 0) throw new Error('Scan the items being returned first.')
+  const items: RefundItemRow[] = lines.map((l) => ({
+    id: input.newId(), org_id: input.orgId, refund_id: refundId, sale_item_id: null, product_id: l.productId,
+    name: l.name, quantity: l.qty, unit_price: Math.round(lineTotalPence(l) / l.qty) / 100, line_total: lineTotalPence(l) / 100,
+    vat_rate: l.vatRate, vat_amount: lineVatPence(l) / 100, return_to_stock: input.returnToStock,
+  }))
+  return {
+    refund: {
+      id: refundId, org_id: input.orgId, till_id: input.tillId, day_session_id: null, staff_id: input.staffId, approved_by: input.approvedBy,
+      sale_id: null, method: 'cash', total: items.reduce((s, i) => s + Math.round(i.line_total * 100), 0) / 100,
+      vat_total: items.reduce((s, i) => s + Math.round(i.vat_amount * 100), 0) / 100,
+      reason: input.reason.trim(), refunded_at: input.at.toISOString(),
+    },
+    items,
+    originalReceiptNo: null,
   }
 }
 

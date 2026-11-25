@@ -1,10 +1,14 @@
 // The shapes passed between the screen and the till PC's own storage.
 import type { Product } from './products'
+import type { Basket } from './basket'
 import type { SaleDraft, SaleRecord } from './sale'
 import type { RefundDraft, RefundRecord, Refunded } from './refund'
 import type { AuditRow } from './audit'
 import type { Staff } from './staff'
 import type { DayInfo, Report } from './report'
+
+// A sale put to one side while the next customer is served. Kept on the PC, so it survives a restart.
+export type ParkedSale = { id: string; basket: Basket; parkedAt: string; staffId: string | null }
 
 // Everything that happened in one trading day on this till.
 export type DayData = { day: DayInfo; sales: SaleRecord[]; refunds: RefundRecord[]; audits: AuditRow[] }
@@ -70,4 +74,6 @@ export type LocalApi = {
   dayData(dayId: string): Promise<DayData>
   listDays(limit: number): Promise<DayInfo[]>
   topProductIds(limit: number): Promise<string[]> // most sold on this till, best first
+  getParked(): Promise<ParkedSale[]>
+  setParked(parked: ParkedSale[]): Promise<void>
 }

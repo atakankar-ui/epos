@@ -114,6 +114,7 @@ const because = async (reason) => { await win.click(`.approval >> text="${reason
 const audits = (action) => [...server.rows.audit_log.values()].filter((a) => a.action === action)
 const pin = async (digits) => { await win.keyboard.type(digits); await win.keyboard.press('Enter') }
 const openSetup = async () => { await win.click('.topbar >> text=Menu'); await win.click('.approval >> text=Setup') }
+const totalIs = (t) => win.waitForFunction((t) => document.querySelector('[data-testid=total]')?.textContent === t, t, { timeout: 10000 })
 const saved = () => win.waitForFunction(() => document.querySelector('.message')?.textContent.includes('Sale saved'))
 const alertText = async () => (await win.textContent('.tender [role=alert]')).trim()
 const sellCola = async () => { await scan('5000112637922'); await win.click('.pay.by-cash'); await win.click('.quick >> text=Exact'); await win.click('text=Next customer'); await saved(); return message() }
@@ -313,7 +314,7 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await win.waitForSelector('text=Drawer opened. This has been logged.'); assert.deepEqual([...jobs()[before]], [0x1b, 0x40, ...KICK]); await waitingIs(0)
   assert.deepEqual(audits('no_sale').map((a) => [a.staff_id, a.approved_by, a.reason]), [['staff-2', 'staff-1', 'Giving change']]); step('open drawer with no sale: manager PIN, reason, drawer opens, logged')
 
-  await win.click('.topbar >> text=Menu'); await win.click('.approval >> text=Refund')
+  await win.click('.topbar >> text=Menu'); await win.click('.approval >> text=Refund (with a receipt)')
   await win.fill('[data-testid=refund-receipt]', '7'); await win.click('.tender button:has-text("Find")')
   await win.waitForSelector('text=Refund from receipt T2-000007'); await win.click('.stepper >> text="+"'); await win.click('.stepper >> text="+"')
   assert.equal(await win.textContent('[data-testid=refund-qty]'), '2 of 2'); await win.click('.stepper >> text="−"'); await shot('refund')
@@ -325,10 +326,10 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   assert.deepEqual([refund.sale_id, refund.receipt_no, refund.total, refund.vat_total, refund.method, refund.reason, refund.staff_id, refund.approved_by], [sale7.id, 'T2-R000001', 1.49, 0.25, 'cash', 'Faulty or damaged', 'staff-2', 'staff-1'])
   assert.deepEqual([...server.rows.refund_items.values()].map((i) => [i.refund_id, i.product_id, i.quantity, i.line_total, i.return_to_stock]), [[refund.id, 'a1', 1, 1.49, true]])
   assert.deepEqual(audits('refund').map((a) => [a.refund_id, a.sale_id, a.amount, a.approved_by]), [[refund.id, sale7.id, 1.49, 'staff-1']]); step('refund of 1 of 2 colas: manager PIN and reason, drawer opens, slip prints, database gets the refund with product and quantity, and it is logged')
-  await win.click('.topbar >> text=Menu'); await win.click('.approval >> text=Refund'); await win.click('.results >> text=T2-000007')
+  await win.click('.topbar >> text=Menu'); await win.click('.approval >> text=Refund (with a receipt)'); await win.click('.results >> text=T2-000007')
   await win.waitForSelector('text=/1 already refunded/'); assert.equal(await win.textContent('[data-testid=refund-qty]'), '0 of 1'); await win.click('text=Different receipt'); await win.click('.tender >> text=Close'); step('the same receipt again: only the 1 cola not yet refunded can be refunded')
 
-  await win.click('.topbar >> text=Menu'); await win.click('.approval >> text=Refund'); await win.fill('[data-testid=refund-receipt]', '8'); await win.click('.tender button:has-text("Find")')
+  await win.click('.topbar >> text=Menu'); await win.click('.approval >> text=Refund (with a receipt)'); await win.fill('[data-testid=refund-receipt]', '8'); await win.click('.tender button:has-text("Find")')
   await win.waitForSelector('text=Refund from receipt T2-000008'); await win.click('.stepper >> text=All'); const slips = jobs().length
   await win.click('text=Refund £21.00 to the card (on the card machine)'); await win.click('.approval .tiles >> text=Amy'); await pin('1234'); await because('Faulty or damaged')
   assert.equal(await win.textContent('[data-testid=card-amount]'), '£21.00'); assert.equal(server.rows.refunds.size, 1)
@@ -350,7 +351,7 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await win.click('.topbar >> text=Menu'); await win.click('text=Reports (X and Z)'); await win.click('.reasons >> text=X report')
   await win.waitForSelector('[data-testid=report]'); await win.waitForSelector('text=Report printed.')
   const xText = await win.textContent('[data-testid=report]')
-  for (const part of ['X REPORT', 'Z number 1', `Sales (${server.rows.sales.size},`, gbp(salesP), gbp(cashP), gbp(cardP), 'Refunds (2)', '-£22.49', `Voided lines (${audits('void_line').length})`, `Voided sales (${audits('void_sale').length})`, 'Price reductions (1)', 'Should be in the drawer', gbp(5000 + cashP - 149)]) assert.ok(xText.includes(part), 'X report is missing: ' + part)
+  for (const part of ['X REPORT', 'Z number 1', `Sales (${server.rows.sales.size},`, gbp(salesP), gbp(cashP), gbp(cardP), 'Refunds (2)', '-£22.49', `Voided lines (${audits('void_line').length})`, `Voided sales (${audits('void_sale').length})`, 'Discounts and reductions (1)', 'Should be in the drawer', gbp(5000 + cashP - 149)]) assert.ok(xText.includes(part), 'X report is missing: ' + part)
   assert.ok(jobs()[jobs().length - 1].includes('X REPORT')); await shot('x-report')
   await win.click('.report >> text=Back'); step('X report: totals match every sale and payment in the database; it prints; nothing is reset')
   assert.equal([...server.rows.day_sessions.values()][0].closed_at, undefined)
@@ -376,12 +377,44 @@ const sellCola = async () => { await scan('5000112637922'); await win.click('.pa
   await win.click('button:has-text("Start the day")'); await win.waitForSelector('.sell'); await waitingIs(0)
   assert.deepEqual([...server.rows.day_sessions.values()].map((d) => [d.z_number, !!d.closed_at, d.opening_float]), [[1, true, 50], [2, false, 0]]); step('a new day starts as Z number 2')
 
+  // ----- discounts, split payment, parked sales, refund with no receipt (day 2, Amy the manager signed in) -----
+  let jobCount = jobs().length
+  await scan('5000112637922'); await scan('5000112637922'); await win.click('.actions >> text=Discount')
+  await win.waitForSelector('text=This line: COLA 500ML'); await shot('discount'); await win.click('.approval .quick >> text="10%"'); await because('Reduced to clear')
+  assert.equal(await total(), '£2.68'); assert.match((await lines())[0], /10% off, saves £0\.30/); assert.match(await win.textContent('[data-testid=saved]'), /saved £0\.30/); step('discount: 10% off one line, manager and reason, the basket shows the saving')
+  await scan('333'); await win.keyboard.type('50'); await win.click('.actions >> text=Discount'); await win.click('.approval >> text=The whole sale'); await win.click('.approval >> text="50% off"'); await because('Staff discount')
+  assert.equal(await total(), '£11.99'); step('discount: a typed 50% off the whole sale replaces it on every line')
+  await win.click('.pay.by-cash'); await win.keyboard.type('500'); await win.click('text=Take £5.00 cash, rest later')
+  assert.equal(await win.textContent('[data-testid=due]'), '£6.99'); assert.match(await win.textContent('[data-testid=parts]'), /£5\.00 cash of £11\.99/); await shot('split')
+  await win.click('text=Undo part payments'); await win.waitForSelector('text=£5.00 in cash'); await win.click('text=Carry on taking payment')
+  await win.click('.card-btn'); assert.equal(await win.textContent('[data-testid=card-amount]'), '£6.99'); await win.click('text=Yes, approved')
+  await win.waitForSelector('text=Receipt printed.'); assert.equal(await win.textContent('[data-testid=split]'), 'Paid as £5.00 cash + £6.99 card'); await win.click('text=Next customer'); await saved(); await waitingIs(0)
+  const splitSale = [...server.rows.sales.values()].find((x) => x.receipt_no === 'T2-000010'), splitPays = [...server.rows.payments.values()].filter((x) => x.sale_id === splitSale.id)
+  assert.deepEqual([splitSale.total, splitSale.discount_total], [11.99, 11.99]); assert.deepEqual(splitPays.map((x) => [x.method, x.amount, x.tendered, x.change_given]), [['cash', 5, 5, 0], ['card', 6.99, null, null]])
+  assert.deepEqual([...server.rows.sale_items.values()].filter((i) => i.sale_id === splitSale.id).map((i) => [i.quantity, i.unit_price, i.discount_amount, i.line_total]), [[2, 1.49, 1.49, 1.49], [1, 21, 10.5, 10.5]])
+  const splitReceipt = jobs()[jobCount].toString('latin1'); assert.ok(jobs()[jobCount].includes(KICK)); for (const part of ['Discount', '-\x9c1.49', 'You saved', '\x9c11.99', 'Cash', '\x9c5.00', 'Card', '\x9c6.99']) assert.ok(splitReceipt.includes(part), 'split receipt is missing: ' + part)
+  assert.deepEqual(audits('discount').map((a) => [a.amount, a.reason, a.approved_by, a.details.scope]), [[0.3, 'Reduced to clear', 'staff-1', 'line'], [11.99, 'Staff discount', 'staff-1', 'sale']]); step('split payment: £5 cash then the rest on card; one sale, two payments, discounts on the receipt and in the log')
+
+  await scan('5000112637922'); await win.click('.actions >> text="Park"'); await totalIs('£0.00'); assert.equal(await win.textContent('[data-testid=parked]'), 'Parked (1)')
+  await win.click('.topbar >> text=Menu'); await win.click('text=Reports (X and Z)'); await win.click('.reasons >> text=Z report')
+  await win.waitForSelector('text=/1 parked sale is still waiting/'); await win.click('.tender >> text=Close'); step('park a sale: basket clears; the day cannot be closed while a sale is parked')
+  await scan('12345678905'); await win.click('.pay.by-cash'); await win.click('.quick >> text=Exact'); await win.click('text=Next customer'); await saved()
+  await win.click('[data-testid=parked]'); await shot('parked'); await win.click('.results >> text=COLA 500ML'); await totalIs('£1.49'); assert.equal(await win.textContent('[data-testid=parked]'), 'Parked')
+  await win.click('.pay.by-cash'); await win.click('.quick >> text=Exact'); await win.click('text=Next customer'); await saved(); await waitingIs(0); assert.equal(server.rows.sales.size, 12); step('serve another customer, then bring the parked sale back and finish it')
+
+  jobCount = jobs().length
+  await scan('444'); await win.click('.topbar >> text=Menu'); await win.click('text=Refund the items in the basket (no receipt)'); await because('Faulty or damaged')
+  await totalIs('£0.00'); assert.equal(await message(), 'Refunded £0.99 in cash with no receipt. Slip T2-R000003.'); await waitingIs(0)
+  const loose = [...server.rows.refunds.values()].find((r) => r.receipt_no === 'T2-R000003')
+  assert.deepEqual([loose.sale_id, loose.method, loose.total, loose.approved_by], [null, 'cash', 0.99, 'staff-1']); assert.deepEqual([...server.rows.refund_items.values()].filter((i) => i.refund_id === loose.id).map((i) => [i.sale_item_id, i.product_id, i.quantity]), [[null, 'a5', 1]])
+  assert.ok(jobs()[jobCount].includes(KICK) && jobs()[jobCount].includes('No receipt')); assert.equal(server.rows.sales.size, 12); step('refund with no receipt: scan the item, manager and reason, cash back, slip says "No receipt", no sale is made')
+
   fs.rmSync(printJobs, { recursive: true, force: true }) // the printer "breaks"
   await scan('5000112637922'); await win.click('.pay.by-cash'); await win.click('.quick >> text=Exact')
   await win.waitForSelector('text=/The sale is saved, but the printer did not respond/'); await shot('printer-failed')
-  await win.click('text=Next customer'); await saved(); assert.match(await message(), /Receipt T2-000010/); await waitingIs(0)
-  assert.equal([...server.rows.sales.values()].find((x) => x.receipt_no === 'T2-000010').day_session_id, [...server.rows.day_sessions.values()][1].id)
-  assert.equal(server.rows.sales.size, 10); step('printer broken: the sale is still saved and sent, and the cashier is told the receipt did not print')
+  await win.click('text=Next customer'); await saved(); assert.match(await message(), /Receipt T2-000013/); await waitingIs(0)
+  assert.equal([...server.rows.sales.values()].find((x) => x.receipt_no === 'T2-000013').day_session_id, [...server.rows.day_sessions.values()][1].id)
+  assert.equal(server.rows.sales.size, 13); step('printer broken: the sale is still saved and sent, and the cashier is told the receipt did not print')
   await openSetup()
 
   // ----- disconnect -----

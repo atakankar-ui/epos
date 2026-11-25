@@ -48,8 +48,10 @@ export function buildReceipt(input: {
   let count = 0
   for (const item of sold) {
     const gross = pence(item.line_total)
-    lines.push({ kind: 'pair', left: item.name, right: formatPence(gross) })
+    const off = pence(item.discount_amount)
+    lines.push({ kind: 'pair', left: item.name, right: formatPence(gross + off) })
     if (item.quantity !== 1) text(`  ${qty(item.quantity)} x ${formatPence(pence(item.unit_price))}`)
+    if (off > 0) lines.push({ kind: 'pair', left: '  Discount', right: `-${formatPence(off)}` })
     const entry = byRate.get(item.vat_rate) ?? { gross: 0, vat: 0 }
     entry.gross += gross
     entry.vat += pence(item.vat_amount)
@@ -58,6 +60,7 @@ export function buildReceipt(input: {
   }
   lines.push({ kind: 'rule' })
 
+  if (pence(record.sale.discount_total) > 0) lines.push({ kind: 'pair', left: 'You saved', right: formatPence(pence(record.sale.discount_total)) })
   lines.push({ kind: 'pair', left: 'TOTAL', right: formatPence(pence(record.sale.total)), bold: true, big: true })
   text(`${qty(count)} ${count === 1 ? 'item' : 'items'}`)
   lines.push({ kind: 'blank' })
@@ -100,7 +103,7 @@ export function buildRefundReceipt(input: { record: RefundRecord; shop: ShopDeta
   }).format(new Date(record.refund.refunded_at)).replace(',', '')
   lines.push({ kind: 'pair', left: when, right: input.tillName })
   text(`Refund ${record.refund.receipt_no}`)
-  text(`For receipt ${record.originalReceiptNo}`)
+  text(record.originalReceiptNo ? `For receipt ${record.originalReceiptNo}` : 'No receipt')
   lines.push({ kind: 'rule' })
   for (const item of record.items) {
     lines.push({ kind: 'pair', left: item.name, right: `-${formatPence(pence(item.line_total))}` })

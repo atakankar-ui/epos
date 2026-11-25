@@ -239,3 +239,12 @@ input:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-
 .card-btn { background: var(--brand); border-color: var(--brand); }
 .card-btn:disabled { background: #e2e8f0; color: #94a3b8; border-color: #e2e8f0; }
 .key.enter { background: var(--brand); border-color: var(--brand); }
+
+/* ---------- Discounts, parked sales, split payment ---------- */
+.off { color: #15803d; font-weight: 600; }
+.split { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.split button { min-height: 52px; }
+.approval .split { grid-template-columns: 1fr 1fr; }
+.approval .tab { min-height: 52px; border-radius: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.approval .quick { grid-template-columns: repeat(4, 1fr); }
+.pad .actions button { min-height: 42px; }

@@ -4,7 +4,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { LocalDb } from './db'
 import { registerHardware } from './hardware'
-import type { Binding } from '../shared/local'
+import type { Binding, ParkedSale } from '../shared/local'
 import type { Product } from '../shared/products'
 import type { SaleDraft } from '../shared/sale'
 import type { RefundDraft } from '../shared/refund'
@@ -93,6 +93,8 @@ function registerLocalStorage(): void {
   ipcMain.handle('local:dayData', (_e, dayId: string) => db.dayData(dayId))
   ipcMain.handle('local:listDays', (_e, limit: number) => db.listDays(limit))
   ipcMain.handle('local:topProductIds', (_e, limit: number) => db.topProductIds(limit))
+  ipcMain.handle('local:getParked', () => db.getParked())
+  ipcMain.handle('local:setParked', (_e, parked: ParkedSale[]) => db.setParked(Array.isArray(parked) ? parked.slice(0, 20) : []))
   ipcMain.handle('local:markOtherSynced', (_e, id: string) => db.markOtherSynced(id))
   ipcMain.handle('local:markOtherRefused', (_e, id: string, reason: string) => db.markOtherRefused(id, reason))
   registerHardware(db, () => BrowserWindow.getAllWindows()[0])

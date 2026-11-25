@@ -27,6 +27,8 @@ const local: LocalApi = {
   dayData: (dayId) => ipcRenderer.invoke('local:dayData', dayId),
   listDays: (limit) => ipcRenderer.invoke('local:listDays', limit),
   topProductIds: (limit) => ipcRenderer.invoke('local:topProductIds', limit),
+  getParked: () => ipcRenderer.invoke('local:getParked'),
+  setParked: (parked) => ipcRenderer.invoke('local:setParked', parked),
   markOtherSynced: (id) => ipcRenderer.invoke('local:markOtherSynced', id),
   markOtherRefused: (id, reason) => ipcRenderer.invoke('local:markOtherRefused', id, reason),
 }

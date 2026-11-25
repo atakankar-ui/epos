@@ -8,6 +8,7 @@ import { pullStaff } from '../lib/staff'
 import { syncOnce, type SyncStatus } from '../lib/sync'
 import { buildIndex, type ProductIndex } from '../../../shared/products'
 import { buildSale, type Tender } from '../../../shared/sale'
+import { buildLooseRefund } from '../../../shared/refund'
 import { auditRow, type AuditAction } from '../../../shared/audit'
 import { activeStaff, type Staff } from '../../../shared/staff'
 import type { Basket } from '../../../shared/basket'
@@ -125,7 +126,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
   }), [binding, current, staff, sync])
 
   // Save the sale on this PC first. Only then is it "done"; sending happens after.
-  const completeSale = useCallback(async (basket: Basket, tender: Tender, saleId?: string) => {
+  const completeSale = useCallback(async (basket: Basket, tender: Tender | Tender[], saleId?: string) => {
     const draft = buildSale({
       basket, orgId: binding.orgId, tillId: binding.tillId, staffId: current?.id ?? null, soldAt: new Date(),
       tender, saleId, newId: () => crypto.randomUUID(),
@@ -135,6 +136,22 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
     void sync()
     return saved
   }, [binding, current, sync])
+
+  // A refund with no receipt: the returned goods are in the basket; pay out in cash and log it.
+  const looseRefund = useCallback(async (basket: Basket, answer: Answer) => {
+    const draft = buildLooseRefund({
+      basket, reason: answer.reason, staffId: current?.id ?? null, approvedBy: answer.approvedBy, returnToStock: true,
+      orgId: binding.orgId, tillId: binding.tillId, at: new Date(), newId: () => crypto.randomUUID(),
+    })
+    const totalPence = Math.round(draft.refund.total * 100)
+    const saved = await window.till.local.saveRefund(draft)
+    await tools.log({
+      action: 'refund', reason: answer.reason, approvedBy: answer.approvedBy, refundId: saved.refundId, amountPence: totalPence,
+      details: { receipt_no: saved.receiptNo, no_receipt: true, method: 'cash', items: draft.items.map((i) => ({ name: i.name, quantity: i.quantity })) },
+    })
+    void window.till.hardware.afterRefund(saved.refundId)
+    return { receiptNo: saved.receiptNo, totalPence }
+  }, [binding, current, tools])
 
   if (setup) {
     return (
@@ -177,7 +194,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
         <StartDay tools={tools} onStarted={(d) => { setDay(d); setStatus((s) => ({ ...s, waiting: s.waiting + 1 })); void sync() }} onReports={() => setReporting(true)} />
       ) : (
         <Selling
-          index={index} onPay={completeSale} online={status.link === 'online'} tillId={binding.tillId}
+          index={index} onPay={completeSale} onLooseRefund={looseRefund} online={status.link === 'online'} tillId={binding.tillId}
           tools={tools} blocked={!!asking || refunding || reporting}
           onRefund={() => setRefunding(true)} onReports={() => setReporting(true)}
           onSetup={() => setSetup(true)} menu={menu} setMenu={setMenu} onLock={current ? () => setCurrent(null) : undefined}

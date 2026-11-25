@@ -192,7 +192,11 @@ export function Reports({ binding, day, tools, onClosed, onClose }: {
         {day ? (
           <div className="reasons">
             <button onClick={() => void xReport()} disabled={busy}>X report<small className="muted"> · the day so far, nothing is reset</small></button>
-            <button onClick={async () => { if (await allowed('Z report: close the day')) setCounting(true) }} disabled={busy}>Z report<small className="muted"> · end of day, closes the day</small></button>
+            <button disabled={busy} onClick={async () => {
+              const waiting = (await window.till.local.getParked()).length
+              if (waiting > 0) return setError(`${waiting} parked ${waiting === 1 ? 'sale is' : 'sales are'} still waiting. Bring ${waiting === 1 ? 'it' : 'them'} back and finish or void ${waiting === 1 ? 'it' : 'them'} before closing the day.`)
+              if (await allowed('Z report: close the day')) setCounting(true)
+            }}>Z report<small className="muted"> · end of day, closes the day</small></button>
           </div>
         ) : <p className="muted">No day is open. Start the day to sell and to run an X or Z report.</p>}
         <p className="muted">Past Z reports on this till:</p>

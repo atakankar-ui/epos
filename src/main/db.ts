@@ -4,7 +4,7 @@
 // lost connection cannot lose it.
 import { DatabaseSync } from 'node:sqlite'
 import type { Product } from '../shared/products'
-import type { Binding, DayCloseRow, DayData, DayOpenRow, LocalState, PendingOther, PendingSale } from '../shared/local'
+import type { Binding, DayCloseRow, DayData, DayOpenRow, LocalState, ParkedSale, PendingOther, PendingSale } from '../shared/local'
 import type { DayInfo, Report } from '../shared/report'
 import { refundReceiptNumber, type RefundDraft, type RefundRecord, type Refunded } from '../shared/refund'
 import type { AuditRow } from '../shared/audit'
@@ -110,7 +110,7 @@ export class LocalDb {
     this.transaction(() => {
       const waiting = this.getState().waiting
       if (waiting > 0) throw new Error(`${waiting} sales or records are still waiting to be sent. Connect to the internet and send them first.`)
-      this.db.exec("delete from meta where key in ('binding', 'products_synced_at', 'shop_details', 'staff'); delete from products;")
+      this.db.exec("delete from meta where key in ('binding', 'products_synced_at', 'shop_details', 'staff', 'parked'); delete from products;")
     })
   }
 
@@ -233,7 +233,9 @@ export class LocalDb {
     ).all(String(saleId)) as Array<{ payload: string }>
     const out: Refunded = {}
     for (const row of rows) {
-      for (const item of (JSON.parse(row.payload) as RefundRecord).items) out[item.sale_item_id] = (out[item.sale_item_id] ?? 0) + item.quantity
+      for (const item of (JSON.parse(row.payload) as RefundRecord).items) {
+        if (item.sale_item_id) out[item.sale_item_id] = (out[item.sale_item_id] ?? 0) + item.quantity
+      }
     }
     return out
   }
@@ -320,6 +322,16 @@ export class LocalDb {
       where json_extract(i.value, '$.product_id') is not null and json_extract(i.value, '$.voided') = 0
       group by product order by sold desc, product limit ?`).all(Math.max(1, Math.min(100, Math.floor(limit)))) as Array<{ product: string }>
     return rows.map((r) => r.product)
+  }
+
+  // ---------- parked sales ----------
+  getParked(): ParkedSale[] {
+    const raw = this.getMeta('parked')
+    return raw ? (JSON.parse(raw) as ParkedSale[]) : []
+  }
+
+  setParked(parked: ParkedSale[]): void {
+    this.setMeta('parked', JSON.stringify(parked))
   }
 
   close(): void {

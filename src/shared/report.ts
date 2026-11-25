@@ -38,7 +38,7 @@ export type Report = {
   netPence: number // sales less refunds
   netVatPence: number // VAT on sales less VAT in refunds
   voids: { lineCount: number; linePence: number; saleCount: number; salePence: number }
-  discounts: { count: number; pence: number } // lines sold below their price after a manager's price change
+  discounts: { count: number; pence: number } // lines sold for less: a manager's price change, or a discount
   noSales: number // drawer opened with no sale
   drawer: {
     floatPence: number
@@ -87,6 +87,10 @@ export function buildReport(input: {
       if (item.original_unit_price !== null && item.original_unit_price > item.unit_price) {
         discountCount++
         discountPence += Math.round((p(item.original_unit_price) - p(item.unit_price)) * item.quantity)
+      }
+      if (p(item.discount_amount) > 0) {
+        discountCount++
+        discountPence += p(item.discount_amount)
       }
     }
   }
@@ -167,7 +171,7 @@ export function reportLines(report: Report, shop: ShopDetails, timeZone?: string
 
   pair(`Voided lines (${report.voids.lineCount})`, formatPence(report.voids.linePence))
   pair(`Voided sales (${report.voids.saleCount})`, formatPence(report.voids.salePence))
-  pair(`Price reductions (${report.discounts.count})`, formatPence(report.discounts.pence))
+  pair(`Discounts and reductions (${report.discounts.count})`, formatPence(report.discounts.pence))
   pair('Drawer opened with no sale', String(report.noSales))
   lines.push({ kind: 'rule' })
 

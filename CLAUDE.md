@@ -46,6 +46,15 @@ Build one phase at a time and end each with: what was built, what to test, decis
   total and shows any difference (`report.cardCheck`). An earlier Stripe-style linked flow (send amount, poll,
   cancel) was removed; it is in git history at commit a8d43c9 (`lib/card.ts`) if a provider link is ever built.
 
+- **Counter features** (v0.11.0, no database change): **discounts** are per line (`Line.discount`: percent or
+  amount; whole-sale discounts are spread over the lines so VAT per rate stays right), manager-approved, logged
+  as audit `discount`, stored as `sale_items.discount_amount` with `line_total` net of it. **Split payment**:
+  `buildSale` takes a list of tenders, each with `amountPence`; parts are held in `Tender.tsx` until the total
+  is covered, and only then is the sale saved. **Parked sales** live in local meta `parked` (survive a restart)
+  and block the Z report. **Refund with no receipt** (`buildLooseRefund`): the returned goods are scanned into
+  the basket, then Menu, manager approval, cash back; `refunds.sale_id` is null. Refunds give back
+  `line_total / quantity` per unit, so a discounted line refunds what was actually paid.
+
 - **Hardware**: `shared/receipt.ts` builds a receipt as plain lines; `shared/escpos.ts` turns lines into text
   (preview, tests) or ESC/POS bytes (PC437, so `£` is 0x9C). `main/printer.ts` sends bytes: network printers by
   TCP 9100; Windows-installed (USB) printers RAW through winspool via a PowerShell script (no native module);
@@ -63,8 +72,7 @@ Build one phase at a time and end each with: what was built, what to test, decis
   and are synced after sales, in order (a refund needs its sale on the server first).
 - **Refunds** (`shared/refund.ts`, `screens/Refund.tsx`): by receipt number (this till's records, else the
   database when online), per line and quantity, never more than sold minus already refunded, own
-  number run `T1-R000001`, in cash or (for a card sale) back to the card on the card machine. No refund without
-  a receipt yet.
+  number run `T1-R000001`, in cash or (for a card sale) back to the card on the card machine.
 
 - **Trading days and reports** (`shared/report.ts`, `screens/Reports.tsx`): local `days` table, at most one open;
   `StartDay` (float) shows whenever none is. The local database stamps `day_session_id` on each sale and refund.

@@ -104,7 +104,7 @@ describe('X and Z report figures', () => {
       '------------------------------------------',
       'Voided lines (1)                     £1.20',
       'Voided sales (1)                     £8.99',
-      'Price reductions (1)                 £0.98',
+      'Discounts and reductions (1)         £0.98',
       'Drawer opened with no sale               1',
       '------------------------------------------',
       'Cash in the drawer',
