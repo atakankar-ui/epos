@@ -13,9 +13,17 @@ import type { TillTools } from './Till'
 type Message = { kind: 'info' | 'error'; text: string }
 
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', '00', 'C']
+
+// Each product button keeps the same soft colour every day, so staff learn where things are.
+const TILE_COLOURS = ['#fef3c7', '#e0f2fe', '#dcfce7', '#fce7f3', '#ede9fe', '#fde8d0', '#fee2e2', '#e2e8f0', '#fef9c3', '#d1fae5']
+function tileColour(name: string): string {
+  let h = 0
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return TILE_COLOURS[h % TILE_COLOURS.length]
+}
 const MAX_ENTRY = 14 // the longest barcode a scanner sends
 
-export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund, onReports, onLock }: {
+export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund, onReports, onLock, onSetup, menu, setMenu }: {
   index: ProductIndex
   // Saves the sale on this PC and returns its receipt number.
   onPay: (basket: Basket, tender: TenderType, saleId?: string) => Promise<{ receiptNo: string; saleId: string }>
@@ -26,6 +34,9 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
   onRefund: () => void
   onReports: () => void
   onLock?: () => void
+  onSetup: () => void
+  menu: boolean // the Menu button lives in the top bar
+  setMenu: (open: boolean) => void
 }) {
   // The basket and which line is selected change together, so they live together.
   const [sale, setSale] = useState<{ basket: Basket; selectedId: string | null }>({ basket: emptyBasket, selectedId: null })
@@ -34,15 +45,27 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
   const [entry, setEntry] = useState('') // digits typed or scanned so far
   const [message, setMessage] = useState<Message | null>(null)
   const [needsPrice, setNeedsPrice] = useState<Product | null>(null) // scanned, but has no price
-  const [searching, setSearching] = useState(false)
   const [query, setQuery] = useState('')
-  const [menu, setMenu] = useState(false)
-  const [paying, setPaying] = useState(false) // the payment page is open
+  const [paying, setPaying] = useState<'cash' | 'card' | null>(null) // the payment page is open, and how they are paying
+  const [tab, setTab] = useState<'nobarcode' | 'top' | 'search'>('nobarcode')
+  const [topIds, setTopIds] = useState<string[]>([])
+  const [cardOn, setCardOn] = useState(true)
   const listRef = useRef<HTMLUListElement>(null)
 
   const sums = useMemo(() => totals(basket), [basket])
   const selected = basket.lines.find((l) => l.id === selectedId && !l.voided) ?? null
-  const results = useMemo(() => (searching ? searchProducts(index, query) : []), [index, query, searching])
+  const results = useMemo(() => (tab === 'search' ? searchProducts(index, query) : []), [index, query, tab])
+  // Items with a price but no barcode: the ones a cashier cannot scan.
+  const noBarcode = useMemo(() => index.all.filter((p) => !p.barcode && p.pricePence !== null).sort((a, b) => a.name.localeCompare(b.name)).slice(0, 60), [index])
+  const topSold = useMemo(() => {
+    const byId = new Map(index.all.map((p) => [p.id, p]))
+    return topIds.map((id) => byId.get(id)).filter((p): p is Product => !!p)
+  }, [index, topIds])
+
+  useEffect(() => {
+    void window.till.local.topProductIds(24).then(setTopIds)
+    void window.till.hardware.getConfig().then((c) => setCardOn(c.card !== 'off'))
+  }, [])
 
   const say = (kind: Message['kind'], text: string) => setMessage({ kind, text })
 
@@ -95,7 +118,7 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
     function onKey(event: KeyboardEvent) {
       if (paying || blocked || menu) return // another page has the keyboard; a scan must not add items now
       const target = event.target as HTMLElement | null
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return // typing in the search box
       if (event.ctrlKey || event.altKey || event.metaKey) return
       if (/^\d$/.test(event.key)) press(event.key)
       else if (event.key === 'Enter') { event.preventDefault(); enter() }
@@ -207,20 +230,25 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
     setSale({ basket: emptyBasket, selectedId: null })
     setEntry('')
     setNeedsPrice(null)
-    setPaying(false)
+    setPaying(null)
+    void window.till.local.topProductIds(24).then(setTopIds)
   }
 
   const entryText = needsPrice
     ? entry ? formatPence(Number(entry)) : 'Price?'
     : entry
 
+  const tiles = tab === 'search' ? results : tab === 'top' ? topSold : noBarcode
+  const status = message?.text ?? (basket.lines.length === 0 ? 'Ready for the next customer' : `Sale in progress · ${basket.lines.length} ${basket.lines.length === 1 ? 'line' : 'lines'}`)
+
   return (
     <div className="sell">
       <section className="basket" aria-label="Basket">
+        <header className={`message ${message?.kind ?? ''}`} role="status">{status}</header>
         {basket.lines.length === 0 ? (
           <div className="basket-empty">
             <p className="big">Scan an item to start</p>
-            <p className="muted">or press Search to find it by name</p>
+            <p className="muted">or tap a button, or type a price and press Misc item</p>
           </div>
         ) : (
           <ul className="lines" ref={listRef}>
@@ -261,85 +289,89 @@ export function Selling({ index, onPay, online, tillId, tools, blocked, onRefund
         </footer>
       </section>
 
-      <section className="pad" aria-label="Keypad">
-        <div className={`entry${needsPrice ? ' price' : ''}`} data-testid="entry">{entryText || ' '}</div>
-        <div className={`message ${message?.kind ?? ''}`} role="status">{message?.text ?? ' '}</div>
-
-        <div className="keys">
-          {KEYS.map((key) => (
-            <button key={key} className={key === 'C' ? 'key clear' : 'key'} onClick={() => press(key)}>{key}</button>
+      <section className="picker" aria-label="Products">
+        <div className="tabs">
+          <button className={tab === 'nobarcode' ? 'tab on' : 'tab'} onClick={() => setTab('nobarcode')}>No barcode</button>
+          <button className={tab === 'top' ? 'tab on' : 'tab'} onClick={() => setTab('top')}>Most sold</button>
+          <button className={tab === 'search' ? 'tab on' : 'tab'} onClick={() => { setTab('search'); setQuery('') }}>Search</button>
+        </div>
+        {tab === 'search' && (
+          <input
+            className="search-box" autoFocus placeholder="Type part of the name" value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && setTab('nobarcode')}
+          />
+        )}
+        <div className="tiles">
+          {tiles.map((product) => (
+            <button key={product.id} className="tile" style={{ background: tileColour(product.name) }} onClick={() => sell(product)}>
+              <span>{product.name}</span>
+              <em>{product.pricePence === null ? 'Ask price' : formatPence(product.pricePence)}</em>
+            </button>
           ))}
         </div>
-        <button className="key enter" onClick={enter}>Enter</button>
+        {tiles.length === 0 && (
+          <p className="muted none">
+            {tab === 'search' ? (query.trim() ? `Nothing found for "${query.trim()}".` : `${index.all.length.toLocaleString('en-GB')} products to search.`)
+              : tab === 'top' ? 'The products this till sells most will appear here.'
+                : 'Products that have a price but no barcode (bread, papers, bags) appear here. Add them in Retail Aid.'}
+          </p>
+        )}
+      </section>
+
+      <section className="pad" aria-label="Keypad">
+        <div className={`entry${needsPrice ? ' price' : ''}`}><small>{needsPrice ? 'Price' : 'Scan or type'}</small><b data-testid="entry">{entryText || '\u00a0'}</b></div>
+        <div className="keys">
+          {KEYS.map((key) => (
+            <button key={key} className={key === 'C' ? 'key clear' : 'key'} onClick={() => press(key)}>{key === 'C' ? 'Clear' : key}</button>
+          ))}
+        </div>
+        <div className="misc-row">
+          <button className="misc" onClick={misc}>Misc item</button>
+          <button className="key enter" onClick={enter}>Enter</button>
+        </div>
 
         <div className="actions">
           <button onClick={() => selected && changeQty(selected.qty - 1)} disabled={!selected || selected.qty <= 1}>− 1</button>
           <button onClick={() => selected && changeQty(selected.qty + 1)} disabled={!selected || selected.qty >= MAX_QTY}>+ 1</button>
           <button onClick={qtyFromEntry} disabled={!selected}>Qty</button>
-          <button onClick={() => { setSearching(true); setQuery('') }}>Search</button>
-          <button onClick={misc}>Misc item</button>
-          <button className="danger" onClick={() => void voidSelected()} disabled={!selected}>Void line</button>
-        </div>
-
-        <div className="actions">
-          <button className="danger" onClick={() => void voidSale()} disabled={basket.lines.length === 0}>Void sale</button>
           <button onClick={() => void changePrice()} disabled={!selected}>Price</button>
-          <button onClick={() => setMenu(true)}>More</button>
+          <button className="danger" onClick={() => void voidSelected()} disabled={!selected}>Void line</button>
+          <button className="danger" onClick={() => void voidSale()} disabled={basket.lines.length === 0}>Void sale</button>
         </div>
 
-        <button className="pay" onClick={() => { setSearching(false); setPaying(true) }} disabled={!hasLiveLines(basket)}>
-          Pay {hasLiveLines(basket) ? formatPence(sums.totalPence) : ''}
-        </button>
+        <div className="pays">
+          <button className="pay by-cash" onClick={() => setPaying('cash')} disabled={!hasLiveLines(basket)}>
+            <span>Cash</span><small>{hasLiveLines(basket) ? formatPence(sums.totalPence) : '\u00a0'}</small>
+          </button>
+          {cardOn && (
+            <button className="pay by-card" onClick={() => setPaying('card')} disabled={!hasLiveLines(basket)}>
+              <span>Card</span><small>{hasLiveLines(basket) ? formatPence(sums.totalPence) : '\u00a0'}</small>
+            </button>
+          )}
+        </div>
       </section>
 
       {paying && (
         <Tender
-          totalPence={sums.totalPence} online={online} tillId={tillId}
+          totalPence={sums.totalPence} start={paying} online={online} tillId={tillId}
           complete={(tender, saleId) => onPay(basket, tender, saleId)}
-          onBack={() => setPaying(false)} onFinished={saleFinished}
+          onBack={() => setPaying(null)} onFinished={saleFinished}
         />
       )}
 
       {menu && (
-        <div className="overlay" role="dialog" aria-label="More">
+        <div className="overlay" role="dialog" aria-label="Menu">
           <div className="tender approval">
-            <h2>More</h2>
+            <h2>Menu</h2>
             <div className="reasons">
               <button onClick={() => { setMenu(false); onRefund() }}>Refund</button>
               <button onClick={() => void noSale()}>Open drawer (no sale)</button>
               <button onClick={() => { setMenu(false); if (basket.lines.length > 0) say('error', 'Finish or void this sale before running a report.'); else onReports() }}>Reports (X and Z)</button>
               {onLock && <button onClick={() => { setMenu(false); if (basket.lines.length > 0) say('error', 'Finish or void this sale before locking the till.'); else onLock() }}>Lock the till</button>}
             </div>
-            <button onClick={() => setMenu(false)}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {searching && (
-        <div className="overlay" role="dialog" aria-label="Search products">
-          <div className="search">
-            <div className="search-top">
-              <input
-                autoFocus
-                placeholder="Type part of the name"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Escape' && setSearching(false)}
-              />
-              <button onClick={() => setSearching(false)}>Close</button>
-            </div>
-            <ul className="results">
-              {results.map((product) => (
-                <li key={product.id}>
-                  <button onClick={() => { setSearching(false); sell(product) }}>
-                    <span className="name">{product.name}<small>{product.barcode ?? 'no barcode'}</small></span>
-                    <span className="amount">{product.pricePence === null ? 'No price' : formatPence(product.pricePence)}</span>
-                  </button>
-                </li>
-              ))}
-              {query.trim() && results.length === 0 && <li className="muted none">Nothing found for "{query.trim()}".</li>}
-              {!query.trim() && <li className="muted none">{index.all.length.toLocaleString('en-GB')} products to search.</li>}
-            </ul>
+            <button onClick={() => { setMenu(false); onSetup() }}>Setup</button>
+            <button className="primary" onClick={() => setMenu(false)}>Close</button>
           </div>
         </div>
       )}

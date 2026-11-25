@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LocalDb } from '../src/main/db'
-import { addProduct, emptyBasket } from '../src/shared/basket'
+import { addProduct, emptyBasket, setQty } from '../src/shared/basket'
 import { buildSale } from '../src/shared/sale'
 import type { Binding } from '../src/shared/local'
 import type { Product } from '../src/shared/products'
@@ -82,6 +82,18 @@ describe('local storage', () => {
     expect(db.pendingSales(10)).toHaveLength(1)
     db.markSynced(a.sale.id)
     expect(db.getState()).toMatchObject({ waiting: 0, refused: 0, lastRefusal: null })
+  })
+
+  it('knows which products this till sells most', () => {
+    db.bind(binding)
+    const sell = (p: Product, qty: number) => db.saveSale(buildSale({
+      basket: setQty(addProduct(emptyBasket, p, 'l').basket, 'l', qty), orgId: 'org', tillId: 'till', soldAt: new Date(),
+      tender: { method: 'cash', tenderedPence: 99999 }, newId: () => `id-${++n}`,
+    }))
+    const crisps: Product = { id: 'p9', name: 'Crisps', barcode: null, pricePence: 95, vatRate: 0.2 }
+    sell(cola, 2); sell(crisps, 5); sell(cola, 1)
+    expect(db.topProductIds(10)).toEqual(['p9', 'p1'])
+    expect(db.topProductIds(1)).toEqual(['p9'])
   })
 
   it('refuses a sale made for a different till', () => {

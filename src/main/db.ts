@@ -312,6 +312,16 @@ export class LocalDb {
     return rows.map((r) => JSON.parse(r.payload) as DayInfo)
   }
 
+  // The products this till has sold most of, best first (for the "Most sold" buttons).
+  topProductIds(limit: number): string[] {
+    const rows = this.db.prepare(`
+      select json_extract(i.value, '$.product_id') as product, sum(json_extract(i.value, '$.quantity')) as sold
+      from sales, json_each(sales.payload, '$.items') as i
+      where json_extract(i.value, '$.product_id') is not null and json_extract(i.value, '$.voided') = 0
+      group by product order by sold desc, product limit ?`).all(Math.max(1, Math.min(100, Math.floor(limit)))) as Array<{ product: string }>
+    return rows.map((r) => r.product)
+  }
+
   close(): void {
     this.db.close()
   }

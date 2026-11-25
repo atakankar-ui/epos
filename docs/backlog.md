@@ -6,11 +6,14 @@ order the first shop asks for it.
 
 ## 1. Design pass
 
-- [ ] Selling screen redesign (Atakan picks from mock-ups first), then payment, sign-in, Setup.
+- [x] Selling screen redesign: bright scheme, product buttons, compact keypad with Misc item, Cash and Card
+      on the selling screen, Menu in the top bar (v0.10.0). Atakan expects to keep adjusting it.
+- [ ] Polish the payment, sign-in, Setup and report pages to match (they have the new colours, not a new layout).
 
 ## 2. At the counter
 
-- [ ] Quick-tap buttons for items with no barcode (bread, newspapers, bags)
+- [ ] Quick-tap buttons the shop chooses and arranges itself (name, colour, tab, order). v0.10.0 has a first
+      version with no setup: a "No barcode" tab (products with a price and no barcode) and a "Most sold" tab.
 - [ ] Discounts (percentage or amount off) and multi-buy offers
 - [ ] Park a sale and bring it back
 - [ ] Age check prompt for alcohol and tobacco

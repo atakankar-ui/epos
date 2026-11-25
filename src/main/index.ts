@@ -92,6 +92,7 @@ function registerLocalStorage(): void {
   ipcMain.handle('local:closeDay', (_e, input: Parameters<LocalDb['closeDay']>[0]) => db.closeDay(input))
   ipcMain.handle('local:dayData', (_e, dayId: string) => db.dayData(dayId))
   ipcMain.handle('local:listDays', (_e, limit: number) => db.listDays(limit))
+  ipcMain.handle('local:topProductIds', (_e, limit: number) => db.topProductIds(limit))
   ipcMain.handle('local:markOtherSynced', (_e, id: string) => db.markOtherSynced(id))
   ipcMain.handle('local:markOtherRefused', (_e, id: string, reason: string) => db.markOtherRefused(id, reason))
   registerHardware(db, () => BrowserWindow.getAllWindows()[0])

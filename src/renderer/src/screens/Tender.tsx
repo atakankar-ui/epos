@@ -9,6 +9,7 @@ type Done = { receiptNo: string; saleId: string; method: 'cash' | 'card'; change
 
 export function Tender(props: {
   totalPence: number
+  start: 'cash' | 'card' // which button on the selling screen was pressed
   online: boolean
   tillId: string
   // Saves the sale on this PC. Returns its receipt number.
@@ -20,7 +21,7 @@ export function Tender(props: {
   const [entry, setEntry] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [confirmingCard, setConfirmingCard] = useState(false)
+  const [confirmingCard, setConfirmingCard] = useState(props.start === 'card')
   const [cardOn, setCardOn] = useState(true)
   const [done, setDone] = useState<Done | null>(null)
   useEffect(() => { void window.till.hardware.getConfig().then((c) => setCardOn(c.card !== 'off')) }, [])

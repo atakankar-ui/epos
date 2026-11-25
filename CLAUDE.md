@@ -17,6 +17,14 @@ Build one phase at a time and end each with: what was built, what to test, decis
 - Product fields the till reads: `barcode`, `till_name` (else `name`), `retail_price` (VAT-inclusive),
   `vat_rate` (generated from `vat_code`; empty for most products today).
 
+- **Look and layout** (Atakan chose mock-up "E", 25 Nov 2026; he expects to keep adjusting it): bright scheme
+  only (no dark: the shops are bright), blue top bar, green = cash/confirm, blue = card/selected. Selling screen
+  is three columns: basket | product buttons (tabs: No barcode, Most sold, Search) | a compact keypad with a
+  **Misc item** button right beside it (typed prices are the norm in his shops), action buttons, then Cash and
+  Card. He found a large keypad too big and a tiny one too small: keys are about 54px high. Everything else
+  (Refund, Open drawer, Reports, Lock, Setup) is behind **Menu** in the top bar. The bright rules sit at the end
+  of `styles.css` and override the first-version styles above them. Never use the class name `card` on a
+  button: `.card` is the white panel style.
 - **Local storage** is `src/main/db.ts`: SQLite through Node's built-in `node:sqlite` (no native module to
   compile), file `till.sqlite` in Electron's userData. It holds the binding (shop + till), the product copy and
   every sale with its sent/waiting state. The screen reaches it only through `window.till.local` (preload IPC).

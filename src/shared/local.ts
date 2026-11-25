@@ -69,4 +69,5 @@ export type LocalApi = {
   closeDay(input: { id: string; closedBy: string | null; countedPence: number | null; at: string; report: Report }): Promise<DayInfo>
   dayData(dayId: string): Promise<DayData>
   listDays(limit: number): Promise<DayInfo[]>
+  topProductIds(limit: number): Promise<string[]> // most sold on this till, best first
 }

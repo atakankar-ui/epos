@@ -1,13 +1,16 @@
 :root {
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --line: #334155;
-  --text: #f1f5f9;
-  --muted: #94a3b8;
-  --accent: #22c55e;
-  --accent-text: #052e16;
-  --warn: #f59e0b;
-  --bad: #f87171;
+  /* Bright scheme: a till is used in a well-lit shop. */
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --line: #dbe0e8;
+  --text: #0f172a;
+  --muted: #5b6678;
+  --accent: #16a34a; /* green: go, pay, confirm */
+  --accent-text: #ffffff;
+  --brand: #2563eb; /* blue: the top bar, selected things, card */
+  --brand-soft: #e8f0ff;
+  --warn: #b45309;
+  --bad: #b91c1c;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-size: 18px;
 }
@@ -165,3 +168,74 @@ label small { font-weight: 400; }
 .gate .keys, .approval .keys { flex: none; grid-auto-rows: 56px; }
 .tender.report { width: min(640px, 100%); }
 .paper { background: #f8fafc; color: #0f172a; font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace; font-size: 0.72rem; line-height: 1.35; padding: 16px; border-radius: 8px; margin: 0; overflow: auto; white-space: pre; align-self: center; }
+
+
+/* =====================================================================
+   The bright design (chosen by Atakan, 25 Nov 2026, mock-up "E").
+   These rules come last, so they win over the first-version styles above.
+   ===================================================================== */
+button { background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06); }
+button:disabled { box-shadow: none; }
+input, select, textarea { background: #fff; }
+input:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--brand); }
+.card, .tender, .search { box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12); }
+.good { color: #15803d; }
+.danger { color: var(--bad); border-color: #fecaca; }
+.overlay { background: rgba(15, 23, 42, 0.45); }
+.mark { color: #fff; }
+.test-strip { background: repeating-linear-gradient(45deg, #facc15, #facc15 14px, #fff7cc 14px, #fff7cc 28px); color: #713f12; text-shadow: none; }
+.paper { border: 1px solid var(--line); }
+.pin, .line .qty { background: var(--bg); }
+.tiles button, .reasons button, .results button, .staff li, .refund-line { background: #fff; }
+.who { background: var(--brand-soft); color: var(--brand); border: 0; }
+
+/* top bar */
+.topbar { background: var(--brand); color: #fff; border: 0; height: 50px; padding: 0 14px; }
+.topbar .muted { color: rgba(255, 255, 255, 0.75); }
+.topbar .small-btn, .topbar .link { background: #fff; color: var(--text); border: 0; min-height: 34px; border-radius: 999px; padding: 0 14px; font-size: 0.8rem; font-weight: 700; box-shadow: none; }
+.topbar .link.offline, .topbar .link.signin { color: var(--warn); }
+.topbar .waiting { color: #fde68a; }
+.topbar .waiting.bad { color: #fecaca; }
+
+/* selling screen: basket | product buttons | keypad and pay */
+.sell { grid-template-columns: minmax(340px, 1fr) minmax(0, 1.35fr) 252px; gap: 10px; padding: 10px; }
+.basket, .picker { background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.07); }
+.basket .message { min-height: 0; padding: 11px 16px; border-bottom: 1px solid #eceff4; font-size: 0.8rem; font-weight: 600; color: var(--muted); line-height: 1.3; }
+.basket .message.info { color: #15803d; }
+.basket .message.error { color: #fff; background: var(--bad); }
+.line { background: transparent; border: 2px solid transparent; box-shadow: none; min-height: 60px; }
+.line.selected { background: var(--brand-soft); border-color: var(--brand); }
+.totals .total strong { font-size: 2.9rem; letter-spacing: -1px; }
+
+.picker { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.tabs { display: flex; gap: 6px; padding: 10px 10px 0; flex: none; }
+.tab { min-height: 42px; padding: 0 16px; border-radius: 999px; font-size: 0.8rem; color: var(--muted); }
+.tab.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.search-box { margin: 10px 10px 0; flex: none; }
+.picker .tiles { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); grid-auto-rows: 104px; align-content: start; gap: 8px; padding: 10px; }
+.picker .tiles .tile { border: 0; border-radius: 12px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; text-align: left; padding: 10px 12px; min-height: 0; box-shadow: none; font-weight: 600; font-size: 1rem; }
+.tile span { font-size: 0.83rem; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tile em { font-style: normal; font-weight: 500; font-size: 0.78rem; color: #334155; }
+.picker .none { padding: 18px; }
+
+.pad { gap: 7px; overflow: visible; }
+.pad .entry { display: flex; align-items: center; justify-content: space-between; height: 48px; padding: 0 12px; background: #fff; font-size: 1.3rem; letter-spacing: 0.02em; }
+.pad .entry small { font-size: 0.68rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+.pad .entry.price { border-color: var(--warn); }
+.pad .keys { flex: none; grid-auto-rows: 54px; gap: 6px; }
+.pad .key { min-height: 0; font-size: 1.3rem; border-radius: 10px; }
+.pad .key.clear { font-size: 0.8rem; color: var(--warn); }
+.misc-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 6px; flex: none; }
+.misc { min-height: 52px; background: var(--brand-soft); border-color: var(--brand); color: var(--brand); font-size: 0.95rem; font-weight: 700; padding: 0 8px; }
+.pad .key.enter { min-height: 52px; font-size: 0.9rem; background: var(--brand); border-color: var(--brand); color: #fff; }
+.pad .actions { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.pad .actions button { min-height: 44px; font-size: 0.72rem; padding: 0 4px; }
+.pays { flex: 1; min-height: 130px; display: flex; flex-direction: column; gap: 7px; }
+.pay { flex: 1; min-height: 0; border: 0; border-radius: 14px; font-size: 1.3rem; line-height: 1.1; }
+.pay small { font-size: 0.78rem; font-weight: 600; opacity: 0.9; }
+.pay.by-cash { background: var(--accent); color: #fff; }
+.pay.by-card { background: var(--brand); color: #fff; }
+.pay:disabled { background: #e2e8f0; color: #94a3b8; }
+.card-btn { background: var(--brand); border-color: var(--brand); }
+.card-btn:disabled { background: #e2e8f0; color: #94a3b8; border-color: #e2e8f0; }
+.key.enter { background: var(--brand); border-color: var(--brand); }

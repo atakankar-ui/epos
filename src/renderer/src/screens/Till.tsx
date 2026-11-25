@@ -46,6 +46,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
   const [asking, setAsking] = useState<{ ask: Ask; resolve: (a: Answer | null) => void } | null>(null)
   const [refunding, setRefunding] = useState(false)
   const [reporting, setReporting] = useState(false)
+  const [menu, setMenu] = useState(false)
   const [day, setDay] = useState<DayInfo | null | undefined>(undefined) // undefined = not read yet
   const busy = useRef(false)
   const again = useRef(false)
@@ -147,6 +148,7 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
   const isTest = /test/i.test(binding.orgName)
   const linkText = { online: 'Online', offline: 'Offline', signin: 'Sign-in needed' }[status.link]
   const locked = activeStaff(staff).length > 0 && !current
+  const selling = !!index && !locked && !!day // the selling screen is showing
 
   return (
     <div className="till">
@@ -162,7 +164,9 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
           </span>
         )}
         <span className={`link ${status.link}`} data-testid="link"><i />{linkText}</span>
-        <button className="small-btn" onClick={() => setSetup(true)}>Setup</button>
+        {selling
+          ? <button className="small-btn" onClick={() => setMenu(true)}>Menu</button>
+          : <button className="small-btn" onClick={() => setSetup(true)}>Setup</button>}
       </header>
 
       {!index ? (
@@ -175,7 +179,8 @@ export function Till({ binding, onDisconnected }: { binding: Binding; onDisconne
         <Selling
           index={index} onPay={completeSale} online={status.link === 'online'} tillId={binding.tillId}
           tools={tools} blocked={!!asking || refunding || reporting}
-          onRefund={() => setRefunding(true)} onReports={() => setReporting(true)} onLock={current ? () => setCurrent(null) : undefined}
+          onRefund={() => setRefunding(true)} onReports={() => setReporting(true)}
+          onSetup={() => setSetup(true)} menu={menu} setMenu={setMenu} onLock={current ? () => setCurrent(null) : undefined}
         />
       )}
 
